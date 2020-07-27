@@ -5,6 +5,8 @@
 layout: default
 ---
 
+posts are mostly about embedded systems, operating systems and system software
+
 theme used: [cayman](https://github.com/pages-themes/cayman)
 
 ## Heated marshmellows
