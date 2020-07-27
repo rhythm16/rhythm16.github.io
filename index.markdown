@@ -5,11 +5,10 @@
 layout: default
 ---
 
-sometimes all we need is some clean design.
 theme used: [cayman](https://github.com/pages-themes/cayman)
 
-## Content page
-[Off you go!](./content.md)
+## Heated marshmellows
+[blog posts](./content.md)
 
 ## Links
 [HackMD](https://hackmd.io/@rhythm)
