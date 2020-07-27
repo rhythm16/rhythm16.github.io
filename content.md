@@ -1,6 +1,6 @@
 ---
 layout: default
-title: snacks & marshmellows
+title: heated marshmellows
 permalink: /marshmellows/
 ---
 
