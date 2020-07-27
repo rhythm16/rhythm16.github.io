@@ -5,4 +5,12 @@
 layout: default
 ---
 
-have a nice day
+## Content page
+[Off you go!](./content.md)
+
+## Links
+[HackMD](https://hackmd.io/@rhythm)
+[Medium](https://medium.com/@a8922222558036)
+
+## Contact
+a8922222558036@gmail.com
