@@ -21,7 +21,7 @@
 title: Digital campfire
 email: b05202010@ntu.edu.tw
 description: >- # this means to ignore newlines until "baseurl:"
-   Come chill :)  Main interests are embedded systems, operating systems and system software. Enjoy!
+   A place to chill, relax and read some of my awesome technical posts/rants, mostly about embedded systems, operating systems and system software. Enjoy your time here!
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: jekyllrb
