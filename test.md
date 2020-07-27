@@ -1,5 +1,5 @@
 ---
-layout: page
+layout: default
 title: "test title"
 permalink: /testtest/
 ---

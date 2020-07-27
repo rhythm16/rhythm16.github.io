@@ -1,5 +1,5 @@
 ---
-layout: post
+layout: default
 title:  "what a post bro"
 date:   2020-07-27 10:35:10 +0800
 categories: jekyll update
