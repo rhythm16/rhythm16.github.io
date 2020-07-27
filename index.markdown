@@ -4,3 +4,5 @@
 
 layout: default
 ---
+
+have a nice day
