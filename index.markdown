@@ -9,8 +9,8 @@ posts are mostly about embedded systems, operating systems and system software
 
 theme used: [cayman](https://github.com/pages-themes/cayman)
 
-## Heated marshmellows
-These are more organized posts, hence the term "heated". :)
+## Toasted marshmellows
+These are more organized posts, hence the term "toasted". :)
 
 [blog posts](./content.md)
 
@@ -18,6 +18,13 @@ These are more organized posts, hence the term "heated". :)
 Books/courses I'm currently working on, they're still "cool". 
 
 [check them out!](./cool.md)
+
+## Firewood
+Some informative posts/resources by others I've gathered on the Interent.
+
+We want to keep the fire going.
+
+[Off you go](./firewood.md)
 
 ## Links
 [HackMD](https://hackmd.io/@rhythm)
