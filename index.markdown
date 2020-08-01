@@ -20,7 +20,7 @@ Books/courses I'm currently working on, they're still "cool".
 [check them out!](./cool.md)
 
 ## Firewood
-Some informative posts/resources by others I've gathered on the Interent.
+Some informative posts/resources by others I've gathered on the Internet.
 
 We want to keep the fire going.
 
