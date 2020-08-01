@@ -4,7 +4,7 @@ title: cool drinks
 permalink: /drinks/
 ---
 
-# Stuff I'm currently working on turning into a blog post...(may never happen tho!)
+These are stuff I'm currently working on turning into a blog post...(may never happen tho)
 
 ## General topics
 * GCC inline assembly
