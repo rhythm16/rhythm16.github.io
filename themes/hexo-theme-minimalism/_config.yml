@@ -10,7 +10,7 @@ menu:
   Categories:
     url: /categories
     External: false
-    name: 分类
+    name: Categories
   Archives:
     url: /archives
     External: false
