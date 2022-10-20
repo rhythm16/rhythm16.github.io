@@ -11,8 +11,8 @@
 
 1. manual check for upstream updates
 2. update contents under `themes`
-3. apply `my_patch`
-4. update `this_commit.txt`
+3. edit `_config.yml`, `layout/includes/{post-list.ejs, post.ejs}`, and `layout/tags.ejs` to English
+4. push the changes to `main`
 5. `hexo s` to check
 6. `hexo clear`, `hexo generate`, `hexo deploy`
 
