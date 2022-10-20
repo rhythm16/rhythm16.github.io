@@ -4,7 +4,7 @@
 
   <div class="tags-container">
     <% if (site.tags.length <= 0) { %>
-        <a class="tag" href="">暂无标签</a>
+        <a class="tag" href="">No tags yet</a>
     <% } %>
     <% site.tags.forEach((tag) => { %>
       <a class="tag" href="<%= url_for(tag.path) %>"><%= tag.name %></a>
