@@ -1,0 +1,46 @@
+diff --git a/_config.yml b/_config.yml
+index a355a87..74d6c39 100644
+--- a/_config.yml
++++ b/_config.yml
+@@ -2,31 +2,31 @@ menu:
+   Index:
+     url: /
+     External: false
+-    name: 首页
++    name: Home
+   Tags:
+     url: /tags
+     External: false
+-    name: 标签
+-#  Categories:
+-#    url: /categories
+-#    External: false
+-#    name: 分类
++    name: Tags
++  Categories:
++    url: /categories
++    External: false
++    name: 分类
+   Archives:
+     url: /archives
+     External: false
+-    name: 归档
++    name: Archives
+   About:
+     url: /about
+     External: false
+-    name: 关于
++    name: About
+ 
+ # 深色主题
+ dark_theme:
+-  enable: true
++  enable: false
+ 
+ # 联系方式
+ contact:
+-  github: "https://github.com/f-dong"
++  github: 
+   twitter:
+   weibo:
+   zhihu:
