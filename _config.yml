@@ -103,5 +103,5 @@ theme: hexo-theme-minimalism
 ## Docs: https://hexo.io/docs/one-command-deployment
 deploy:
   type: git
-  repo: https://github.com/rhythm16/rhythm16.github.io.git
+  repo: git@github.com:rhythm16/rhythm16.github.io.git
   branch: gh-pages
