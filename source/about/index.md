@@ -1,15 +1,23 @@
 ---
 title: About
-date: 2022-10-20 13:41:02
+date: 2022-10-26 13:41:02
 ---
 
-A
+<style>
+r { color: Red }
+o { color: #d2b4de }
+g { color: Green }
+</style>
 
-B
+<o>_Seeing through abstractions like they're nothing._</o>
+<br/><br/>
 
-C
+## Focus Area
+I study system virtualization, particularly Linux's KVM, am most familiar with the ARMv8 architecture.
 
-D
+## New Stuff
+Rust is becoming quite popular, learning and playing catch-up...
 
-E
-
+## Links
+* [github](https://github.com/rhythm16)
+* email: rhythmv514rc1@gmail.com
