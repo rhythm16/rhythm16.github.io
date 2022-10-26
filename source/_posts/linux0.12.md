@@ -1,17 +1,11 @@
 ---
-title: Linux0.12
+title: ⟪Linux 0.12 內核完全註釋v5.0⟫ 閱讀心得
 date: 2021-02-09 21:20:15
 summary:
 tags:
   - Linux
 categories: Books
 ---
-
----
-tags: github
----
-
-# ⟪Linux 0.12 內核完全註釋v5.0⟫ 閱讀心得
 
 > 這是一本線上可取得的免費書籍，作者為趙炯博士，現為同济大学机械工程学院机械电子教研室副教授，可於作者網站 www.oldlinux.org 下載這本書
 
