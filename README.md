@@ -10,9 +10,8 @@
 ## Theme Update
 
 1. manual check for upstream updates
-2. update contents under `themes`
-3. edit `_config.yml`, `layout/includes/{post-list.ejs, post.ejs}`, and `layout/tags.ejs` to English
+2. cherry pick them here
+3. `hexo s` to check
 4. push the changes to `main`
-5. `hexo s` to check
-6. `hexo clear`, `hexo generate`, `hexo deploy`
+5. `hexo clear`, `hexo generate`, `hexo deploy`
 
