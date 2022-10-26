@@ -2,7 +2,7 @@
 title: Hello World
 date: 2020-01-01 00:00:00
 summary: test summary
-tags: 
+tags:
   - test tag1
   - test tag2
   - test tag3
