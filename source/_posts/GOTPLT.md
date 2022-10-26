@@ -1,12 +1,10 @@
 ---
 title: Linux/ELF動態鏈接部分機制(GOT&PLT)
-date: 2022-10-20 21:20:15
-summary: 
-tags: 
-  - tag1
-  - tag2
-  - tag3
-categories: OMG
+date: 2021-02-10 21:20:15
+summary:
+tags:
+  - GOT/PLT
+categories: technical
 ---
 
 在讀作業系統、計算機結構等科目或是在學習程式的過程中，會讀到一個機制叫做"動態鏈接(dynamic linking)"，它可以使得多個程式共用函數，進而得到節省記憶體的效果。
