@@ -4,6 +4,8 @@ date: 2021-02-10 21:20:15
 summary:
 tags:
   - GOT/PLT
+  - Linux
+  - ELF
 categories: technical
 ---
 
