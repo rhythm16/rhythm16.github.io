@@ -1,0 +1,75 @@
+![](git1.png)
+```graphviz
+digraph structs {
+	node[shape=record]
+    struct4 [label="{Tree 72538..|{{<f0> perm|<f4> 040000|<f8>100644}|{<f1> type|<f5>tree|<f9>blob}|{<f2> hash|<f6>271ca..|<f10>d28a6..}|{<f3> name|<f7>dir|<f11>my_file.txt}}}"];
+    struct5 [label="{Tree 271ca..|{{<f0> perm|<f8>100644}|{<f1> type|<f9>blob}|{<f2> hash|<f10>171ed..}|{<f3> name|<f11>inner_file.txt}}}"];
+    struct6 [label="{Blob 171ed..|\"LINE IN INNER FILE\"}"]
+    struct7 [label="{Blob d28a6..|\"FIRST LINE\"}"]
+    struct4:f6 -> struct5;
+    struct5:f10 -> struct6;
+    struct4:f10 -> struct7;
+}
+```
+
+![](git2.png)
+```graphviz
+digraph structs {
+    newrank=true;
+	node[shape=record]
+    {rankdir=LR}
+    rank1 [style=invisible];
+    rank2 [style=invisible];
+    rank1 -> rank2 [color=white];
+    structcf [label="{Commit f55db..|{{<f0> tree|<f4> parent|<f8>author|commiter}|{<f1> 72538..|<f5>c0e23..|<f9>rhythm ...|rhythm ...}}}}"];
+    structcc [label="{Commit c0e23..|{{<f0> tree|<f4> parent|<f8>author|commiter}|{<f1> 6fe44..|<f5>|<f9>rhythm ...|rhythm ...}}}}"];
+    structt6 [label="{Tree 6fe44..|{{<f0> perm|<f8>100644}|{<f1> type|<f9>blob}|{<f2> hash|<f10>d28a6..}|{<f3> name|<f11>my_file.txt}}}"];
+    structt7 [label="{Tree 72538..|{{<f0> perm|<f4> 040000|<f8>100644}|{<f1> type|<f5>tree|<f9>blob}|{<f2> hash|<f6>271ca..|<f10>d28a6..}|{<f3> name|<f7>dir|<f11>my_file.txt}}}"];
+    structt2 [label="{Tree 271ca..|{{<f0> perm|<f8>100644}|{<f1> type|<f9>blob}|{<f2> hash|<f10>171ed..}|{<f3> name|<f11>inner_file.txt}}}"];
+    structb1 [label="{Blob 171ed..|\"LINE IN INNER FILE\"}"]
+    structbd [label="{Blob d28a6..|\"FIRST LINE\"}"]
+    structcf:f1 -> structt7;
+    //structcf:f5 -> structcc;
+    structcc:f1 -> structt6;
+    structt6:f10 -> structbd[constraint=false];
+    structt7:f6 -> structt2;
+    structt2:f10 -> structb1;
+    structt7:f10 -> structbd;
+    //{rank=same; structcc structcf}
+    /*subgraph commit0 {
+        structcf:f1 -> structt7;
+        structt7:f6 -> structt2;
+        structt2:f10 -> structb1;
+        structt7:f10 -> structbd;
+    }
+    subgraph commit1 {
+        structcc:f1 -> structt6;
+        structt6:f10 -> structbd;
+    }
+    {rank = same;}
+    */
+}
+```
+
+![](git3.png)
+```graphviz
+digraph git {
+    {rankdir=LR}
+    "commit #3" -> "root tree #3"
+    "commit #2" -> "root tree #2"
+    "commit #1" -> "root tree #1"
+    "commit #0" -> "root tree #0"
+    "commit #0" -> "commit #1" [dir=back]
+    "commit #1" -> "commit #2" [dir=back]
+    "commit #2" -> "commit #3" [dir=back]
+    {rank = same; "commit #0" "commit #1" "commit #2" "commit #3"}
+    "root tree #0" -> "blob a"
+    "root tree #0" -> "blob b"
+    "root tree #1" -> "blob c"
+    "root tree #1" -> "blob d"
+    "root tree #2" -> "blob e"
+    "root tree #2" -> "blob f"
+    "root tree #3" -> "blob g"
+    "root tree #3" -> "blob h"
+}
+```
