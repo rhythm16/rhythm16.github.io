@@ -9,8 +9,8 @@ o { color: #d2b4de }
 g { color: Green }
 </style>
 
-<o>_Seeing through abstractions like they're nothing._</o>
-<br/><br/>
+<o>_"忍者，是在黑暗中支撐和平的無名者."_</o>
+<o>_"The ninja maintains peace namelessly in the dark."_</o>
 
 ## Focus Area
 I study system virtualization, particularly Linux's KVM, am most familiar with the ARMv8 architecture.
@@ -21,3 +21,4 @@ Rust is becoming quite popular, learning and playing catch-up...
 ## Links
 * [github](https://github.com/rhythm16)
 * email: rhythmv514rc1@gmail.com
+<br/><br/>
