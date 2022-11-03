@@ -10,7 +10,6 @@ g { color: Green }
 </style>
 
 <o>_"忍者，是在黑暗中支撐和平的無名者."_</o>
-<o>_"The ninja maintains peace namelessly in the dark."_</o>
 
 ## Focus Area
 I study system virtualization, particularly Linux's KVM, am most familiar with the ARMv8 architecture.
