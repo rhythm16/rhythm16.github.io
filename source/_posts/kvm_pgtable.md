@@ -16,7 +16,7 @@ categories: technical
 
 ## 前言
 
-在Linux kernel 5.9週期，KVM ARM開發者們為了為[google pkvm](https://www.youtube.com/watch?v=wY-u6n75iXc)做準備，在code base許多地方做了翻修，今天就是介紹其中新設計的page table walker。
+在Linux kernel 5.10週期，KVM ARM開發者們為了為[google pkvm](https://www.youtube.com/watch?v=wY-u6n75iXc)做準備，在code base許多地方做了翻修，今天就是介紹其中新設計的page table walker。
 
 原先在KVM ARM中在做page table walk的時候，寫法就是單純的在需要的地方直接一路access然後dereference下去，e.g. `create_hyp_{p4d, pud, pmd, pte}_mappings` 這幾個函數。這樣做的缺點之一就是軟體在存取page tables時code很難重複使用，而新的作法在5.10中出現，把存取page table這樣的操作模組化，各個需要存取page table的地方都能共用同樣的程式。
 
