@@ -42,7 +42,7 @@ main.cpp:(.text+0x5): undefined reference to `awesome_C_function()`
 collect2: error: ld returned 1 exit status
 ```
 問號？？為什麼會這樣勒
-原因是g\++在編譯C++程式時，會對符號(變數與函數名稱等等)進行符號修飾([name mangling](https://en.wikipedia.org/wiki/Name_mangling))，導致鏈接器在鏈接時找不到對應的符號名稱，對應到最後一行`collect2: error: ld returned 1 exit status`
+原因是g\++在編譯C++程式時，會對符號(變數與函式名稱等等)進行符號修飾([name mangling](https://en.wikipedia.org/wiki/Name_mangling))，導致鏈結器在鏈結時找不到對應的符號名稱，對應到最後一行`collect2: error: ld returned 1 exit status`
 
 如果使用`readelf`工具檢視各個編譯出的.o檔的符號表，就可以看出端倪：(注意不同版本之編譯器、作業系統結果可能不完全一樣)
 main.o:
@@ -142,7 +142,7 @@ void awesome_C_function();
 #endif
 ```
 
-如此一來，無論是C還是C++程式，都可以`#include "awesome.h"`了，預處理器會自動的依情況展開，編譯、鏈接都會成功。
+如此一來，無論是C還是C++程式，都可以`#include "awesome.h"`了，預處理器會自動的依情況展開，編譯、鏈結都會成功。
 
 這樣的技巧再幾乎所有的系統標頭檔都有用到。
 本文內容來自

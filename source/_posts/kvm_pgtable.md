@@ -18,7 +18,7 @@ categories: technical
 
 在Linux kernel 5.10週期，KVM ARM開發者們為了為[google pkvm](https://www.youtube.com/watch?v=wY-u6n75iXc)做準備，在code base許多地方做了翻修，今天就是介紹其中新設計的page table walker。
 
-原先在KVM ARM中在做page table walk的時候，寫法就是單純的在需要的地方直接一路access然後dereference下去，e.g. `create_hyp_{p4d, pud, pmd, pte}_mappings` 這幾個函數。這樣做的缺點之一就是軟體在存取page tables時code很難重複使用，而新的作法在5.10中出現，把存取page table這樣的操作模組化，各個需要存取page table的地方都能共用同樣的程式。
+原先在KVM ARM中在做page table walk的時候，寫法就是單純的在需要的地方直接一路access然後dereference下去，e.g. `create_hyp_{p4d, pud, pmd, pte}_mappings` 這幾個函式。這樣做的缺點之一就是軟體在存取page tables時code很難重複使用，而新的作法在5.10中出現，把存取page table這樣的操作模組化，各個需要存取page table的地方都能共用同樣的程式。
 
 ## 重要結構
 
@@ -41,7 +41,7 @@ struct kvm_pgtable {
         u32                                     ia_bits; // 這個page table所翻譯的virtual address是幾個bits
         u32                                     start_level; // 從第幾層開始
         kvm_pte_t                               *pgd; // 重要成員：root page table的linear map address
-        struct kvm_pgtable_mm_ops               *mm_ops; // 操作此page table的相關函數e.g.申請&釋放記憶體
+        struct kvm_pgtable_mm_ops               *mm_ops; // 操作此page table的相關函式e.g.申請&釋放記憶體
                                   
         /* Stage-2 only */  
         struct kvm_s2_mmu                       *mmu; // 略
@@ -56,7 +56,7 @@ struct kvm_pgtable {
 
 ```c
 struct kvm_pgtable_walker {
-        const kvm_pgtable_visitor_fn_t          cb; // 在walk這個page table tree時會呼叫的函數      
+        const kvm_pgtable_visitor_fn_t          cb; // 在walk這個page table tree時會呼叫的函式
         void * const                            arg; // 傳遞給cb的參數
         const enum kvm_pgtable_walk_flags       flags; // 設定什麼時候要呼叫cb，有三個不互斥的選項：
 // 1. KVM_PGTABLE_WALK_LEAF: 走到葉節點時呼叫
@@ -100,11 +100,11 @@ int kvm_pgtable_walk(struct kvm_pgtable *pgt, u64 addr, u64 size,
 }
 ```
 
-這個函數預期`pgt` 和`walker` caller已經準備好了，再加上利用傳進來的`addr` 和`size` 製作出這次所使用的`kvm_pgtalbe_walk_data`，然後呼叫`_kvm_pgtable_walk`。
+這個函式預期`pgt` 和`walker` caller已經準備好了，再加上利用傳進來的`addr` 和`size` 製作出這次所使用的`kvm_pgtalbe_walk_data`，然後呼叫`_kvm_pgtable_walk`。
 
 ### `_kvm_pgtable_walk`
 
-這個函數負責各個root page，見註解
+這個函式負責各個root page，見註解
 
 ```c
 static int _kvm_pgtable_walk(struct kvm_pgtable_walk_data *data)
@@ -125,7 +125,7 @@ static int _kvm_pgtable_walk(struct kvm_pgtable_walk_data *data)
         for (idx = kvm_pgd_page_idx(data); data->addr < data->end; ++idx) {
                 // 每個循環ptep指向當前root page
                 kvm_pte_t *ptep = &pgt->pgd[idx * PTRS_PER_PTE];
-                // 呼叫更底層的實作函數
+                // 呼叫更底層的實作函式
                 ret = __kvm_pgtable_walk(data, ptep, pgt->start_level);
                 if (ret)
                         break;
@@ -137,7 +137,7 @@ static int _kvm_pgtable_walk(struct kvm_pgtable_walk_data *data)
 
 ### `__kvm_pgtable_walk`
 
-這個函數loop過一個page的entries
+這個函式loop過一個page的entries
 
 ```c
 static int __kvm_pgtable_walk(struct kvm_pgtable_walk_data *data,
@@ -156,7 +156,7 @@ static int __kvm_pgtable_walk(struct kvm_pgtable_walk_data *data,
                 if (data->addr >= data->end)
                         break;
                 // 把data和當前看的位址以及當前的level當作輸入
-                // 呼叫實際操作的函數
+                // 呼叫實際操作的函式
                 ret = __kvm_pgtable_visit(data, ptep, level);
                 if (ret)
                         break;
@@ -240,9 +240,9 @@ Page table其實是一個多child的樹狀結構(4K page就是512個child)，這
 
 ## 使用範例：`create_hyp_mappings`
 
-Linux在初始化KVM的時候的執行模式是EL1，此時需要在進入EL2之前為其製作和設定好EL2所使用的page tables，使用的函數就是`create_hyp_mappings`。
+Linux在初始化KVM的時候的執行模式是EL1，此時需要在進入EL2之前為其製作和設定好EL2所使用的page tables，使用的函式就是`create_hyp_mappings`。
 
-`create_hyp_mappings`在KVM初始化重點函數之一`init_hyp_mode` 中被多次呼叫，分別替EL2 建立了以下幾個區域的mappings：
+`create_hyp_mappings`在KVM初始化重點函式之一`init_hyp_mode` 中被多次呼叫，分別替EL2 建立了以下幾個區域的mappings：
 
 * EL2 code (`__hyp_text_start` \~ `__hyp_text_end`)
 * EL2 read only data (`__hyp_rodata_start` \~ `__hyp_rodata_end`)
@@ -252,7 +252,7 @@ Linux在初始化KVM的時候的執行模式是EL1，此時需要在進入EL2之
 * EL2 stack
 * EL2 percpu area
 
-> 這個函數只是建立page tables，並不會進到EL2啟動EL2的address translation機制
+> 這個函式只是建立page tables，並不會進到EL2啟動EL2的address translation機制
 
 ```c
 /**
@@ -296,7 +296,7 @@ int create_hyp_mappings(void *from, void *to, enum kvm_pgtable_prot prot)
 }
 ```
 
-註解其實就對這個函數有不少說明，作為輸入的`from`, `to` 是想要map給EL2的EL1虛擬位址區間，`prot` 則是讀寫執行等權限設定。有趣的是並不需要指定要map給EL2的虛擬位址，EL2的虛擬位址規劃KVM自身有機制決定，具體來說就是利用`kern_hyp_va` 把EL1的虛擬位址轉換成EL2的虛擬位址。
+註解其實就對這個函式有不少說明，作為輸入的`from`, `to` 是想要map給EL2的EL1虛擬位址區間，`prot` 則是讀寫執行等權限設定。有趣的是並不需要指定要map給EL2的虛擬位址，EL2的虛擬位址規劃KVM自身有機制決定，具體來說就是利用`kern_hyp_va` 把EL1的虛擬位址轉換成EL2的虛擬位址。
 
 ### `__create_hyp_mappings`
 
@@ -320,7 +320,7 @@ int __create_hyp_mappings(unsigned long start, unsigned long size,
 ```
 
 ### `kvm_pgtable_hyp_map`
-這個函數就會呼叫新的page table walker `kvm_pgtable_walk`了，呼叫之前製作所需的`kvm_pgtable_walker`(1)，和傳入的`hyp_pgtable`(參數`pgt`)一起傳給`kvm_pgtable_walk`(2)
+這個函式就會呼叫新的page table walker `kvm_pgtable_walk`了，呼叫之前製作所需的`kvm_pgtable_walker`(1)，和傳入的`hyp_pgtable`(參數`pgt`)一起傳給`kvm_pgtable_walk`(2)
 ```c
 int kvm_pgtable_hyp_map(struct kvm_pgtable *pgt, u64 addr, u64 size, u64 phys,
                         enum kvm_pgtable_prot prot)

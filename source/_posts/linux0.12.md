@@ -78,7 +78,7 @@ int func()
 ```
 會有一塊一塊的文字和一塊塊的code，在文字和code都很大塊的時候建議不要看完整個說明文字再讀code，建議看一句文字就看幾行程式，會比較好理解。
 e.g. 說明1 -> some code a -> 說明2 -> some code b, c -> 說明3 -> some code d.
-* 有些函數local variable跟argument都很多要注意
+* 有些函式local variable跟argument都很多要注意
 我發現在讀code時，因為local variable和function argument有時候很多會造成混亂，建議多加注意哪些值是傳進來的哪些是local。
 * 章節閱讀順序
 我是照著順序讀的，不過後來發現這不是最好的做法，我覺得比較好的章節順序是把header file和記憶體管理放到前面：
