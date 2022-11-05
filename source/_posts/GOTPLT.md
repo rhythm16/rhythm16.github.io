@@ -1,5 +1,5 @@
 ---
-title: Linux/ELF動態鏈接部分機制(GOT&PLT)
+title: Linux/ELF動態鏈結部分機制(GOT&PLT)
 date: 2021-02-10 21:20:15
 summary:
 tags:
@@ -9,51 +9,51 @@ tags:
 categories: technical
 ---
 
-在讀作業系統、計算機結構等科目或是在學習程式的過程中，會讀到一個機制叫做"動態鏈接(dynamic linking)"，它可以使得多個程式共用函數，進而得到節省記憶體的效果。
+在讀作業系統、計算機結構等科目或是在學習程式的過程中，會讀到一個機制叫做「動態鏈結」(dynamic linking)，它可以使得多個程式共用函式，進而得到節省記憶體的效果。
 
-一個例子就是C語言<stdio.h>中的 printf()，如果系統中所有要對終端輸出字串的程式都把printf的程式碼包含進原始碼再編譯，不僅會浪費磁碟空間（儲存了一大堆printf），程式同時執行時主記憶體也就被很多個printf函數所佔用。
+一個例子就是C語言<stdio.h>中的 printf()，如果系統中所有要對終端機輸出字串的程式都把printf的程式碼包含進原始碼再編譯，不僅會浪費磁碟空間（儲存了一大堆printf），程式同時執行時主記憶體也就被很多個printf函式所佔用。
 
-所以說比較有效率的方式是讓系統的主記憶體只存著一份printf函數，其他所有程式要輸出字串時讓CPU跳到唯一存放printf的地方執行，結束再跳回原來的程式就行了。之所以叫做動態，就是因為程式編譯時，並不會知道所呼叫的函數在哪裡，無法在編譯時「鏈接」，只能在程式從硬碟載入記憶體時動態地在系統的幫助下完成鏈接。
+所以說比較有效率的方式是讓系統的主記憶體只存著一份printf函式，其他所有程式要輸出字串時讓CPU跳到唯一存放printf的地方執行，結束再跳回原來的程式就行了。之所以叫做動態，就是因為程式編譯時，並不會知道所呼叫的函式在哪裡，無法在編譯時「鏈結」，只能在程式從硬碟載入記憶體時動態地在系統的幫助下完成鏈結。
 
-* [鏈接(linking)](https://en.wikipedia.org/wiki/Linker_(computing))是指讓一隻程式在呼叫函數或使用外部變數時知道要往哪裡找
+* [鏈結(linking)](https://en.wikipedia.org/wiki/Linker_(computing))是指讓一隻程式在呼叫函式或使用外部變數時知道要往哪裡找
 
 這篇文章希望能夠為學過程式語言，但是對於程式究竟如何真正運作有好奇的人提供一部分更深入的內容，共分成三大段一小段：
-1. 第一大段「Linux/ELF動態鏈接流程概述」說明GOT和PLT是什麼，還有他們在系統動態鏈接中扮演什麼角色，以及解釋其中所使用到的名詞和先備知識。
-2. 第二大段開始以組合語言的層級(instruction/assembly level)分析一個簡單的hello world C程式的main函數部分。
-3. 第三大段深入分析程式如何在GOT、PLT、動態鏈接器的幫助下實現動態鏈接。
+1. 第一大段「Linux/ELF動態鏈結流程概述」說明GOT和PLT是什麼，還有他們在系統動態鏈結中扮演什麼角色，以及解釋其中所使用到的名詞和先備知識。
+2. 第二大段開始以組合語言的層級(instruction/assembly level)分析一個簡單的hello world C程式的main函式部分。
+3. 第三大段深入分析程式如何在GOT、PLT、動態鏈結器的幫助下實現動態鏈結。
 4. 最後一小段提出一些在研究中引導出的一些雜談/問題，可以思考看看(其實就是我也不懂的部分XD)
 
-## 1. Linux/ELF動態鏈接流程概述
-ELF檔案格式（當前linux上的主流執行檔格式）儲存在硬碟中時，分成許多section，如下圖 [ELF格式wiki](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format)
+## 1. Linux/ELF動態鏈結流程概述
+ELF檔案格式（當前Linux上的主流執行檔格式）儲存在硬碟中時，分成許多section，如下圖 [ELF格式wiki](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format)
 ![ELF格式wiki](https://i.imgur.com/WoGNVvG.png)
 其中幾個section在圖中有顯示，ELF header紀錄整個檔案的總體訊息，Program header table紀錄檔案從硬碟被載入主記憶體時的編排方式(會和存在硬碟中不大一樣)，Section header table紀錄各section訊息(如每個section名稱、長度、位置等等)，.text是程式碼，.rodata以及.data都是存資料用。
-除了上述的幾個常見的section，要了解動態鏈接必須多知道幾個section，主要就是.got和.plt這兩個。
+除了上述的幾個常見的section，要了解動態鏈結必須多知道幾個section，主要就是.got和.plt這兩個。
 
 ### GOT (Global Offset Table)
-GOT存著很多個一樣大小的元素，形成一個table(基本上就是array)。每個元素都是一個指標(所以說32位元機器一個元素4個byte，64位元就是8個byte)，指向程式所需要的變數或者是函數，也有可能是系統需要的指標。
+GOT存著很多個一樣大小的元素，形成一個table(基本上就是array)。每個元素都是一個指標(所以說32位元機器一個元素4個byte，64位元就是8個byte)，指向程式所需要的變數或者是函式，也有可能是系統需要的指標。
 
 ### PLT (Procedure Linkage Table)
-PLT存著很多個一樣大小的元素，形成一個table(基本上就是array)。每個元素都是一小段程式碼，第一個元素是公共plt，負責呼叫動態鏈接器。從第二個開始每個元素分別對應到一個動態鏈接的函數，會使用該函數所對應之GOT元素。
-> 意思就是一個動態鏈接函數對應到一個GOT元素(指標)，一個PLT元素(執行碼)。CPU執行PLT存的程式碼，使用GOT存的指標想辦法跳到該函數
+PLT存著很多個一樣大小的元素，形成一個table(基本上就是array)。每個元素都是一小段程式碼，第一個元素是公共plt，負責呼叫動態鏈結器。從第二個開始每個元素分別對應到一個動態鏈結的函式，會使用該函式所對應之GOT元素。
+> 意思就是一個動態鏈結函式對應到一個GOT元素(指標)，一個PLT元素(執行碼)。CPU執行PLT存的程式碼，使用GOT存的指標想辦法跳到該函式
 
-整個動態鏈接程序就是
-1. 主程式第一次呼叫函數
-2. 程式跳到該函數的plt元素
-3. 該函數之plt使用其對應到的GOT元素，想要跳到目標函數
-4. (a)因為第一次呼叫，尚未鏈接，GOT指到的地方一樣是函數的plt，結果又跳回該plt元素，把代表該函數的數字推到stack上
+整個動態鏈結程序就是
+1. 主程式第一次呼叫函式
+2. 程式跳到該函式的plt元素
+3. 該函式之plt使用其對應到的GOT元素，想要跳到目標函式
+4. (a)因為第一次呼叫，尚未鏈結，GOT指到的地方一樣是函式的plt，結果又跳回該plt元素，把代表該函式的數字推到stack上
 (b)plt繼續執行，跳到公共plt
 5. 公共plt執行一些東西
-6. 公共plt呼叫動態鏈接器
-7. 動態鏈接器從stack觀察主程式想使用哪個函數，更改第3步所使用的GOT元素的內容，使其指向函數的真正位置，並引導程式執行目的函數
-8. 之後再次呼叫該函數時，第3步時plt使用的GOT已經存著函數的真正位址，就會直接跳到函數執行，這個動態鏈接的方式叫做Lazy Linking。
+6. 公共plt呼叫動態鏈結器
+7. 動態鏈結器從stack觀察主程式想使用哪個函式，更改第3步所使用的GOT元素的內容，使其指向函函式真正位置，並引導程式執行目的函式
+8. 之後再次呼叫該函式時，第3步時plt使用的GOT已經存著函式的真正位址，就會直接跳到函式執行，這個動態鏈結的方式叫做Lazy Linking。
 
-下圖舉例鏈接一個叫foo的函數，數字n的位置就是第n步指令的所在之處，注意{系統用GOT}不是真的只有兩個，詳細情形會在第三大段說明
+下圖舉例鏈結一個叫foo的函式，數字n的位置就是第n步指令的所在之處，注意{系統用GOT}不是真的只有兩個，詳細情形會在第三大段說明
 ![](https://i.imgur.com/sxo16t3.png)
 
 
 ## 2. hello world.c 分析
 
-> 系統實際的implementation非常複雜，而且不同版本行為都可能略有改變甚至完全不同
+> 系統實際的實作非常複雜，而且不同版本行為都可能略有改變甚至完全不同
 
 以下環境使用
 * Linux 4.13.0-36-generic on x86_64
@@ -78,7 +78,7 @@ $
 ```
 
 接下來觀察gcc的輸出，使用objdump看main：
-（程式中有很多其他輔助執行的函數，先略過他們，有些後面會提到）
+（程式中有很多其他輔助執行的函式，先略過他們，有些後面會提到）
 
 ```
 $ objdump -d ./a.out
@@ -96,7 +96,7 @@ $ objdump -d ./a.out
 ```
 
 ### 上面在講什麼？
-`0000000000400526 <main>`是指程式的main函數放在ELF檔離檔案開頭526（16進位）的位置開始，多的400000是gcc設定程式載入記憶體時main在400526的地方。
+`0000000000400526 <main>`是指程式的main函式放在ELF檔離檔案開頭526（16進位）的位置開始，多的400000是gcc設定程式載入記憶體時main在400526的地方。
 接著有8行組合語言，每行編排方式左至右分別為：
 1. 位址，離檔案開始幾個byte+400000（如第一行的400526，這裡省略了前面的10個0）
 2. 機器語言（如第一行`55`，也是16進位）
@@ -107,15 +107,15 @@ $ objdump -d ./a.out
 '%' 代表暫存器，後面接暫存器的名字，如%rbp就是rbp暫存器。
 '$' 指數字，如$0x0就是16進位0，就是0。
 '#' 是objdump幫我們加的註解，幫助我們理解使用。
-'<>' 告訴我們位址指到程式哪邊，可以見到gcc把printf優化成了puts
+'<>' 告訴我們位址指到程式哪邊，可以見到gcc把printf最佳化成了puts
 
 > r開頭的暫存器是64位元，40052a的edi是rdi暫存器的下半32bit部分，同樣400534的eax是rax暫存器的下半32bit部分
 
 如果只是要了解程式在做什麼的話，機器語言的部分是不需要看的，但接下來有部分會探討一些機器語言的編碼方式，因為挺有趣的
 
-### main函數流程
+### main函式流程
 * 400526 & 400527：建構[stack frame](https://en.wikipedia.org/wiki/Call_stack#STACK-FRAME)，先把指到stack base的rbp推到stack上(400526)，再把rsp 複製到rbp，設置好給main使用的stack。
-* 40052a：這個指令幫我們準備參數，拿來餵給幫我們輸出的函數，在x86架構的linux平台上函數的第一個參數是被放在rdi暫存器傳入的，不過需要的空間沒有那麼大，所以使用edi暫存器(rdi的下32bit部分)，所傳入的資料是一個指標，使用readelf看看傳入的4005c4指到哪裡：
+* 40052a：這個指令幫我們準備參數，拿來餵給幫我們輸出的函式，在x86_64架構的Linux平台上函式的第一個參數是被放在rdi暫存器傳入的，不過需要的空間沒有那麼大，所以使用edi暫存器(rdi的下32bit部分)，所傳入的資料是一個指標，使用readelf看看傳入的4005c4指到哪裡：
 ```
 $ readelf -S ./a.out
 There are 31 section headers, starting at offset 0x19d8:
@@ -164,20 +164,20 @@ Contents of section .rodata:
 > 這邊可以看一下機器語言`e8 cc fe ff ff`，前面`e8`對應到callq，後面則是一個參數，用來計算要跳去的位址，這個指令用的計算方式是使用現在`%rip`中的值加上參數，作為下一個`%rip`的數值，也就是要跳去的地方。
 在x86_64架構中，`%rip`存放著下一個即將執行的指令位址(所謂的instruction pointer/program counter)，所以說執行40052f時`%rip`存著的是400534。
 
-> 注意參數的部分因為這台機器為[little-endian](https://en.wikipedia.org/wiki/Endianness)，所以寫成`cc fe ff ff`，而不是`ff ff fe cc`，而且這個數就是[2's complement表示法](https://en.wikipedia.org/wiki/Two%27s_complement)的負308(10進位)，負134(16進位)，而400534-134 = 400400，果然！
+> 注意參數的部分因為x86_64的機器為[little-endian](https://en.wikipedia.org/wiki/Endianness)，所以寫成`cc fe ff ff`，而不是`ff ff fe cc`，而且這個數就是[2's complement表示法](https://en.wikipedia.org/wiki/Two%27s_complement)的負308(10進位)，負134(16進位)，而400534-134 = 400400，果然！
 
 > 從這個的格式可以看出offset的範圍應該是4個byte能夠表示的範圍，也就是2^32^，使用[線上x86_64 disassembler](https://defuse.ca/online-x86-assembler.htm#disassembly2)測試了幾個數值之後發現offset在CPU中會自動被sign extend，以符合64位元的數值運算，而且offset有分正負，
 所以至多可以表示%rip-2^31^ ~ %rip+(2^31^-1)。
 
-* 400534: `mov    $0x0,%eax` 這個mov把0放進%eax，eax在這用於函數回傳值，正在準備為main函數回傳0，可以對應到程式中的`return 0;`，雖然我們沒有寫，但gcc編譯器還是幫我們加上去了。
+* 400534: `mov    $0x0,%eax` 這個mov把0放進%eax，eax在這用於函式回傳值，正在準備為main函式回傳0，可以對應到程式中的`return 0;`，雖然我們沒有寫，但gcc編譯器還是幫我們加上去了。
 * 400539: 把前面指令(400526)所推到stack上的rbp給pop回來
 * 40053a: 接著return回呼叫main的環境。
-* 40053b: 我們的main函數理論上40053a就返回了，不會執行到這裡，我觀察程式中其他可執行的區段發現很多在結束後都有類似這幾個nop指令，我推測是為了讓各區段結尾對齊至位址個位數為0，這部分我不確定，歡迎高手指點。
+* 40053b: 我們的main函式理論上40053a就返回了，不會執行到這裡，我觀察程式中其他可執行的區段發現很多在結束後都有類似這幾個nop指令，我推測是為了讓各區段結尾對齊至位址個位數為0，這部分我不確定，歡迎高手指點。
 
-## 3. GOT、PLT、動態鏈接器之舞
+## 3. GOT、PLT、動態鏈結器之舞
 > 這一大段可以對照第一大段的流程概述，會比較好理解！
 > 
-看完main做了什麼，可以來看程式如何呼叫外部函數了，動態鏈接的開端是main中40052f位址的指令`callq 400400`，對應到前面流程的第1步。
+看完main做了什麼，可以來看程式如何呼叫外部函式了，動態鏈結的開端是main中40052f位址的指令`callq 400400`，對應到前面流程的第1步。
 同樣的使用`objdump -d`觀察400400究竟在做什麼：
 ```
 $ objdump -d ./a.out
@@ -217,7 +217,7 @@ Contents of section .got.plt:
  601020 16044000 00000000                    ..@.....        
  ...
  ```
- > 之所以有.got和.got.plt是因為ELF檔案把GOT拆成變數用的部分(.got)以及函數用的部分(.got.plt)，這個例子中只注意.got.plt
+ > 之所以有.got和.got.plt是因為ELF檔案把GOT拆成變數用的部分(.got)以及函式用的部分(.got.plt)，這個例子中只注意.got.plt
  
  .got.plt就是第一大段所說的GOT，現在的狀態如下：
  ```
@@ -231,7 +231,7 @@ Contents of section .got.plt:
  
 從400400搞了那麼多，結果竟然是跳到400400的下個地方400406(這裡對應流程的第2,3步)。
 
-400406：這個指令簡單，把0推到stack上(第4a步)。這個0代表第一個動態鏈接函數，鏈接器才知道是我們要的puts。
+400406：這個指令簡單，把0推到stack上(第4a步)。這個0代表第一個動態鏈結函式，鏈結器才知道是我們要的puts。
 
 40040b: 接著跳到4003f0(第4b步)，公共.plt部分。(這邊可以算算如何得到4003f0的！)
 
@@ -239,15 +239,15 @@ Contents of section .got.plt:
 
 4003f6: 再次跳轉(第6步)，到601010，程式的global offset table+10(這個10也是16進位)，GOT的第三個元素。
 
-到了這裡其實已經沒辦法再靜態分析下去了，因為第一大段明明說第6步該呼叫動態鏈接器了，而如果看上面.got.plt的內容會發現執行檔601008和601010都只是一大堆0，鏈接器應該不在位址0的地方吧？
+到了這裡其實已經沒辦法再靜態分析下去了，因為第一大段明明說第6步該呼叫動態鏈結器了，而如果看上面.got.plt的內容會發現執行檔601008和601010都只是一大堆0，鏈結器應該不在位址0的地方吧？
 
 解答是.got.plt的前三個元素是有特殊意義的，系統在載入程式的時候，會主動把GOT第二和第三個元素應該要有的資料放進去，而因為那些資料一定要等程式載入記憶體準備執行了才會知道，所以編譯器先在那些地方都填入0。
 
 參考這張圖，原擷取自[CSAPP](https://csapp.cs.cmu.edu)，但我在[這裡](https://www.freebuf.com/articles/system/135685.html)看到的
 ![](https://i.imgur.com/4ukPcxp.png)
-GOT[1] (我們例子的601008)是鏈接器需要的資料，而GOT[2] (我們例子的601010)就是動態鏈接器所在的位址！
+GOT[1] (我們例子的601008)是鏈結器需要的資料，而GOT[2] (我們例子的601010)就是動態鏈結器所在的位址！
 
-接下來我們使用gdb來看看程式運行時GOT是不是真的被改變了！
+接下來我們使用gdb來看看程式執行時GOT是不是真的被改變了！
 ```
 $ gdb ./a.out
 GNU gdb (Ubuntu 7.11.1-0ubuntu1~16.5) 7.11.1
@@ -256,7 +256,7 @@ GNU gdb (Ubuntu 7.11.1-0ubuntu1~16.5) 7.11.1
 Breakpoint 1 at 0x40052a
 (gdb)
 ```
-第一個指令輸入`b main`在main設置斷點，可以觀察gdb特別跳過前兩個設定stack frame的指令，把斷點設在40052a
+第一個指令輸入`b main`在main設下斷點，可以觀察gdb特別跳過前兩個設定stack frame的指令，把斷點設在40052a
 接著執行程式，讓它停在斷點：
 ```
 (gdb) r
@@ -306,10 +306,10 @@ Dump of assembler code for function _dl_runtime_resolve_avx:
    0x00007ffff7dee9b4 <+324>:	vmovdqa 0xe0(%rsp),%ymm7
 ---Type <return> to continue, or q <return> to quit---
 ```
-持續按enter可以繼續顯示更多，從第一行結果可以看到第6步真的跳進動態鏈接器的函數`_dl_runtime_resolve_avx`了！
-至於動態鏈接器如何完成工作就不說明了，因為我也不知道。不過來看一下第3步使用的GOT元素有沒有成功地被鏈接器改成我們想要的函數位址
+持續按enter可以繼續顯示更多，從第一行結果可以看到第6步真的跳進動態鏈結器的函式`_dl_runtime_resolve_avx`了！
+至於動態鏈結器如何完成工作就不說明了，因為我也不知道。不過來看一下第3步使用的GOT元素有沒有成功地被鏈結器改成我們想要的函式位址
 ```
-(gdb) b *main+0xe     #在callq結束的地方設置斷點(鏈接器已完成工作)
+(gdb) b *main+0xe     #在callq結束的地方設置斷點(鏈結器已完成工作)
 Breakpoint 2 at 0x400534
 (gdb) c               #c是continue，繼續執行
 Continuing.
@@ -320,7 +320,7 @@ Breakpoint 2, 0x0000000000400534 in main ()
 0x601000:	0x00600e28	0x00000000	0xf7ffe168	0x00007fff
 0x601010:	0xf7dee870	0x00007fff	0xf7a7c690	0x00007fff
 ```
-第四個元素從原本的`0x00400406 0x00000000`被鏈接器改成`0xf7a7c690 0x00007fff`，看一下變成哪個地方了：
+第四個元素從原本的`0x00400406 0x00000000`被鏈結器改成`0xf7a7c690 0x00007fff`，看一下變成哪個地方了：
 ```
 (gdb) disassemble 0x00007ffff7a7c690
 Dump of assembler code for function _IO_puts:
@@ -334,15 +334,15 @@ Dump of assembler code for function _IO_puts:
    0x00007ffff7a7c752 <+194>:	lea    0x1(%rax),%rdx
 ---Type <return> to continue, or q <return> to quit---
 ```
-終於！我們要的puts函數的指標被存入.got.plt了(第7步)，這下子下一次呼叫printf時，從main進到puts的plt就可以直接跳到函數了！
+終於！我們要的puts函式的指標被存入.got.plt了(第7步)，這下子下一次呼叫printf時，從main進到puts的plt就可以直接跳到函式了！
 
 ## 4. 結尾
 其實我在做這篇文章中的小實驗的時候並不是很順利，我一開始想說用筆電原
-生Linux 5.3 Ubuntu 18.4，測試過程發現程式開始時GOT[1],GOT[2]的內容並沒有在程式載入被填上鏈接器需要的資料和鏈接器的函數位址，反而GOT[3]，也就是動態鏈接器要負責改成我們所需函數的位置，在載入時就已經是我們要的函數位址了，我真的不知道是什麼神秘機制（求高手指點），而且不知道是不是因為[ASLR](https://en.wikipedia.org/wiki/Address_space_layout_randomization)，執行時整個程式的offset也跟存在ELF中的不一樣。
-後來換使用amazon ec2的Linux 4.15 Ubuntu 18.04原本可以，寫到一半不知道是不是遇到系統更新，突然變成像上面那樣直接在載入時就GOT就鏈接好了，最後在windows上開了個相對舊版的Linux/Ubuntu才得到這篇文章中的行為。
+生Linux 5.3 Ubuntu 18.4，測試過程發現程式開始時GOT[1],GOT[2]的內容並沒有在程式載入被填上鏈結器需要的資料和鏈結器的函式位址，反而GOT[3]，也就是動態鏈結器要負責改成我們所需函式的位置，在載入時就已經是我們要的函式位址了，我真的不知道是什麼神秘機制（求高手指點），而且不知道是不是因為[ASLR](https://en.wikipedia.org/wiki/Address_space_layout_randomization)，執行時整個程式的offset也跟存在ELF中的不一樣。
+後來換使用amazon ec2的Linux 4.15 Ubuntu 18.04原本可以，寫到一半不知道是不是遇到系統更新，突然變成像上面那樣直接在載入時就GOT就鏈結好了，最後在windows上開了個相對舊版的Linux/Ubuntu才得到這篇文章中的行為。
 後來我又試了另一台Linux 5.5 Arch Linux，是預期中的行為，所以也不知道是不是linux版本所造成的差異。
 
-還有，原本文章主題是「Linux動態鏈接機制」，後來想想才意識到只講GOT/PLT，鏈接器如何運作都不會，標題還這樣下絕對是貽笑大方，才改成現在的標題XD
+還有，原本文章主題是「Linux動態鏈結機制」，後來想想才意識到只講GOT/PLT，鏈結器如何運作都不會，標題還這樣下絕對是貽笑大方，才改成現在的標題XD
 
 ### 主要參考資料
 這篇文章絕大部分的內容都來自下面三個連結，他們對於GOT/PLT機制的說明都更加詳細，也說得更好，但更重要的是他們都有講到一件這篇沒有的內容，就是為什麼要有GOT/PLT這樣的設計。這裡只有機械式的帶過流程，目的是希望讓一個對這方面不熟但有興趣的人能更無痛理解這個小主題，還有實際地呈現系統運作的奧妙！
@@ -350,15 +350,15 @@ Dump of assembler code for function _IO_puts:
 * [Linux中的GOT和PLT到底是个啥？](https://www.freebuf.com/articles/system/135685.html)
 * [PLT and GOT - the key to code sharing and dynamic libraries](https://www.technovelty.org/linux/plt-and-got-the-key-to-code-sharing-and-dynamic-libraries.html)
 ### 其他參考資料
-* [Linux x86 Program Start Up](http://dbp-consulting.com/tutorials/debugging/linuxProgramStartup.html)，我們分析是直接從main函數開始，這篇就講Linux的運行跑到main之前到底要做哪些事(很多！)
+* [Linux x86 Program Start Up](http://dbp-consulting.com/tutorials/debugging/linuxProgramStartup.html)，我們分析是直接從main函式開始，這篇就講Linux的運行跑到main之前到底要做哪些事(很多！)
 * [virtual memory](https://en.wikipedia.org/wiki/Virtual_memory)，這篇文章不會用到，但我怕有人以為ELF檔的位址就是實際的位址所以還是在這裡提一下有這個東西
 
 ### 一些問題/小討論
 * 為什麼.rodata區段前面有四個bytes`01000200`? 
 [Why static string in .rodata section has a four dots prefix in GCC?](https://stackoverflow.com/questions/34733136/why-static-string-in-rodata-section-has-a-four-dots-prefix-in-gcc)
 * gcc在什麼情況下會把printf()換成puts()，如果原始程式有簡單printf() (可用puts代替的)，以及會使用到printf中puts沒有的功能的話，編譯器還是會把簡單的printf()換成puts()嗎，還是全部使用printf()?
-* 動態鏈接器如何完成它的工作？
-這個問題應該就非常複雜了，會牽扯到整個OS的運行，鏈接器至少要知道有哪些函式庫在記憶體中，還有當前實體記憶體配置狀態等與系統運作密切相關的內容
+* 動態鏈結器如何完成它的工作？
+這個問題應該就非常複雜了，會牽扯到整個OS的運作，鏈結器至少要知道有哪些函式庫在記憶體中，還有當前實體記憶體配置狀態等與系統運作密切相關的內容
 * 前面有一個部分在講解程式有個方法可以跳%rip-2^31^ ~ %rip+(2^31^-1)，如果程式超大要跳超過這個範圍會如何反應？
 * 為什麼有個0x400000的offset?
 與linker script有關，[Why Linux/gnu linker chose address 0x400000?](https://stackoverflow.com/questions/14314021/why-linux-gnu-linker-chose-address-0x400000)
