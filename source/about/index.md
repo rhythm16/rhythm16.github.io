@@ -19,5 +19,6 @@ Rust is becoming quite popular, learning and playing catch-up...
 
 ## Links
 * [github](https://github.com/rhythm16)
+* [blog source](https://github.com/rhythm16/rhythm16.github.io)
 * email: rhythmv514rc1@gmail.com
 <br/><br/>
