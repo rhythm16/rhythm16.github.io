@@ -120,8 +120,8 @@ static int _kvm_pgtable_walk(struct kvm_pgtable_walk_data *data)
         if (!pgt->pgd) // 檢查有沒有root page table
                 return -EINVAL;
         // 在某些系統設定之下，ARMv8的stage 2 page table root page可以不只一頁，
-        // 而是連續多頁(< 16頁)
-        // 這個for loop就是loop過這n個root page, idx: 0 ~ n-1
+        // 而是連續多頁(< 16頁)，如果walk的範圍很大，就可能要走多個root pages
+        // 這個for loop就是loop過這些root pages
         for (idx = kvm_pgd_page_idx(data); data->addr < data->end; ++idx) {
                 // 每個循環ptep指向當前root page
                 kvm_pte_t *ptep = &pgt->pgd[idx * PTRS_PER_PTE];
