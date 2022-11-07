@@ -37,17 +37,17 @@ categories: technical
 紀錄一整個page table tree的metadata，以下簡單說明幾個重要的成員
 
 ```c
-struct kvm_pgtable {  
+struct kvm_pgtable {
         u32                                     ia_bits; // 這個page table所翻譯的virtual address是幾個bits
         u32                                     start_level; // 從第幾層開始
         kvm_pte_t                               *pgd; // 重要成員：root page table的linear map address
         struct kvm_pgtable_mm_ops               *mm_ops; // 操作此page table的相關函式e.g.申請&釋放記憶體
-                                  
-        /* Stage-2 only */  
+
+        /* Stage-2 only */
         struct kvm_s2_mmu                       *mmu; // 略
         enum kvm_pgtable_stage2_flags           flags; // 略
         kvm_pgtable_force_pte_cb_t              force_pte_cb; // 略
-};  
+};
 ```
 
 ### `kvm_pgtable_walker`
@@ -130,7 +130,7 @@ static int _kvm_pgtable_walk(struct kvm_pgtable_walk_data *data)
                 if (ret)
                         break;
         }
- 
+
         return ret;
 }
 ```
@@ -310,11 +310,11 @@ int __create_hyp_mappings(unsigned long start, unsigned long size,
 
         if (WARN_ON(!kvm_host_owns_hyp_mappings()))
                 return -EINVAL;
- 
+
         mutex_lock(&kvm_hyp_pgd_mutex);
         err = kvm_pgtable_hyp_map(hyp_pgtable, start, size, phys, prot);
         mutex_unlock(&kvm_hyp_pgd_mutex);
- 
+
         return err;
 }
 ```
