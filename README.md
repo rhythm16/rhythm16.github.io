@@ -2,7 +2,7 @@
 
 1. clone this repository and enter the directory
 2. `npm install`
-3. make changes is the `main` branch
+3. make changes in the `main` branch
 4. `hexo s` to check
 5. push the changes to `main`
 6. `hexo clear`, `hexo generate`, `hexo deploy`
