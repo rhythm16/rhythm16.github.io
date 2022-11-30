@@ -87,7 +87,7 @@ for_each_possible_cpu(cpu) {
 
 ### 計算per cpu offset
 
-`cpu_prepare_hyp_mode(cpu)` 負責的工作在於填充一個`struct kvm_nvhe_innit_params` ，這個結構存放初始化EL2各個系統暫存器的值，也就包含了`tpidr_el2` 該存的offset，列出目前關心的部份：
+`cpu_prepare_hyp_mode(cpu)` 負責的工作在於填充一個`struct kvm_nvhe_init_params` ，這個結構存放初始化EL2各個系統暫存器的值，也就包含了`tpidr_el2` 該存的offset，列出目前關心的部份：
 
 ```c
 static void cpu_prepare_hyp_mode(int cpu)
