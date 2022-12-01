@@ -85,7 +85,7 @@ We have discussed how the EL2 per cpu areas are allocated and how they are mappe
 
 ### Calculating per cpu offset
 
-`cpu_prepare_hyp_mode(cpu)` is responsible for filling up a `struct kvm_nvhe_init_params` . This structure stores the initial values of EL2 system registers, including `tpidr_el2` . The relavent parts are listed below:
+`cpu_prepare_hyp_mode(cpu)` is responsible for filling up a `struct kvm_nvhe_init_params` . This structure stores the initial values of EL2 system registers, including `tpidr_el2` . The relevant parts are listed below:
 
 ```c
 static void cpu_prepare_hyp_mode(int cpu)
