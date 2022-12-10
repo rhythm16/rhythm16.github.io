@@ -136,7 +136,7 @@ This tree corresponds to the root directory of our toy repository. The interesti
 The meaning of the permissions field is explained in [this](https://unix.stackexchange.com/questions/450480/file-permission-with-six-bytes-in-git-what-does-it-mean) stackoverflow question.
 
 Here's some visualization I made :)
-![](git1.png)
+{% asset_img "git1.png" "" %}
 
 ### commits
 
@@ -163,11 +163,11 @@ committer rhythm <rhythm@music.yes> 1618749484 +0800
 add inner_file.txt
 ```
 The diagram below shows the structure git uses to keep track of commits and their contents. __NOTE__ that the arrow pointing from `commit f55db`'s parent field to `commit c0e23` is missing, the reason is that I just can't get it to work without the graphviz engine making a mess. So you'll have to imagine for yourself. I hope you get the point though.
-![](git2.png)
+{% asset_img "git2.png" "" %}
 
 ## Git repos are blockchains
 From the explanation above, we can see the git commit data structure is something like this:
-![](git3.png)
+{% asset_img "git3.png" "" %}
 
 The commits have the following properties:
 * acyclic
