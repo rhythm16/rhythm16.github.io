@@ -584,7 +584,7 @@ void irq_domain_set_info(struct irq_domain *domain, unsigned int virq,
 {
         [...]
         // 此函式真正設定irq_desc->handle_irq 
-        // (desc->handler_irq = handler)
+        // (desc->handle_irq = handler)
         // 不過也做了許多其他複雜的操作，所以不展開
         __irq_set_handler(virq, handler, 0, handler_name);
         [...]
