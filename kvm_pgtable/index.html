@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>KVM ARM: 新 page table walker</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="KVM ARM: 新 page table walker, blog keywords">
+<meta name="description" content="
+Linux版本：v6.0
+處理器架構：ARMv8
+
+前言在Linux kernel 5.10週期，KVM ARM開發者們為了為google pkvm做準備，在code base許多地方做了翻修，今天就是介紹其中新設計的page table">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">KVM ARM: 新 page table walker</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-11-03</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KVM/">
+              KVM
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/page-tables/">
+              page tables
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux版本：v6.0</p>
+<p>處理器架構：ARMv8</p>
+</blockquote>
+<h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>在Linux kernel 5.10週期，KVM ARM開發者們為了為<a target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=wY-u6n75iXc">google pkvm</a>做準備，在code base許多地方做了翻修，今天就是介紹其中新設計的page table walker。</p>
+<p>原先在KVM ARM中在做page table walk的時候，寫法就是單純的在需要的地方直接一路access然後dereference下去，e.g. <code>create_hyp_&#123;p4d, pud, pmd, pte&#125;_mappings</code> 這幾個函式。這樣做的缺點之一就是軟體在存取page tables時code很難重複使用，而新的作法在5.10中出現，把存取page table這樣的操作模組化，各個需要存取page table的地方都能共用同樣的程式。</p>
+<h2 id="重要結構"><a href="#重要結構" class="headerlink" title="重要結構"></a>重要結構</h2><p>使用新的page table walker時，需要提供一些資訊：</p>
+<ol>
+<li><p>所要存取的page table (<code>struct kvm_pgtable</code>)</p>
+</li>
+<li><p>想要對page table進行的操作，以及walk到哪裡時進行 (<code>struct kvm_pgtable_walker</code>)</p>
+</li>
+<li><p>訪問哪個虛擬位址範圍 (<code>struct kvm_pgtable_walk_data</code>)</p>
+</li>
+</ol>
+<p>見以下說明：</p>
+<h3 id="kvm-pgtable"><a href="#kvm-pgtable" class="headerlink" title="kvm_pgtable"></a><code>kvm_pgtable</code></h3><p>紀錄一整個page table tree的metadata，以下簡單說明幾個重要的成員</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable</span> &#123;</span></span><br><span class="line">        u32                                     ia_bits; <span class="comment">// 這個page table所翻譯的virtual address是幾個bits</span></span><br><span class="line">        u32                                     start_level; <span class="comment">// 從第幾層開始</span></span><br><span class="line">        <span class="type">kvm_pte_t</span>                               *pgd; <span class="comment">// 重要成員：root page table的linear map address</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_mm_ops</span>               *<span class="title">mm_ops</span>;</span> <span class="comment">// 操作此page table的相關函式e.g.申請&amp;釋放記憶體</span></span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Stage-2 only */</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_s2_mmu</span>                       *<span class="title">mmu</span>;</span> <span class="comment">// 略</span></span><br><span class="line">        <span class="class"><span class="keyword">enum</span> <span class="title">kvm_pgtable_stage2_flags</span>           <span class="title">flags</span>;</span> <span class="comment">// 略</span></span><br><span class="line">        <span class="type">kvm_pgtable_force_pte_cb_t</span>              force_pte_cb; <span class="comment">// 略</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-walker"><a href="#kvm-pgtable-walker" class="headerlink" title="kvm_pgtable_walker"></a><code>kvm_pgtable_walker</code></h3><p>提供使用者設定訪問page table時呼叫的函數以及何時呼叫，<code>cb</code> 代表”call back”</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walker</span> &#123;</span></span><br><span class="line">        <span class="type">const</span> <span class="type">kvm_pgtable_visitor_fn_t</span>          cb; <span class="comment">// 在walk這個page table tree時會呼叫的函式</span></span><br><span class="line">        <span class="type">void</span> * <span class="type">const</span>                            arg; <span class="comment">// 傳遞給cb的參數</span></span><br><span class="line">        <span class="type">const</span> <span class="class"><span class="keyword">enum</span> <span class="title">kvm_pgtable_walk_flags</span>       <span class="title">flags</span>;</span> <span class="comment">// 設定什麼時候要呼叫cb，有三個不互斥的選項：</span></span><br><span class="line"><span class="comment">// 1. KVM_PGTABLE_WALK_LEAF: 走到葉節點時呼叫</span></span><br><span class="line"><span class="comment">// 2. KVM_PGTABLE_WALK_TABLE_PRE: 訪問子節點前呼叫</span></span><br><span class="line"><span class="comment">// 3. KVM_PGTABLE_WALK_TABLE_POST: 訪問子節點後呼叫</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-walk-data"><a href="#kvm-pgtable-walk-data" class="headerlink" title="kvm_pgtable_walk_data"></a><code>kvm_pgtable_walk_data</code></h3><p>想要訪問的位址區間，可以看出<code>kvm_pgtable_walk_data</code> 實際上包含了前兩者的資訊</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walk_data</span> &#123;</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable</span>              *<span class="title">pgt</span>;</span> <span class="comment">// 指向要存取的page table metadata</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walker</span>       *<span class="title">walker</span>;</span> <span class="comment">// 指向使用的walker</span></span><br><span class="line"></span><br><span class="line">        u64                             addr; <span class="comment">// walk起始位址</span></span><br><span class="line">        u64                             end; <span class="comment">// walk結束位址</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h2 id="新walker實作"><a href="#新walker實作" class="headerlink" title="新walker實作"></a>新walker實作</h2><p>接著就可以來看walker的入口點<code>kvm_pgtable_walk</code>:</p>
+<h3 id="kvm-pgtable-walk"><a href="#kvm-pgtable-walk" class="headerlink" title="kvm_pgtable_walk"></a><code>kvm_pgtable_walk</code></h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">kvm_pgtable_walk</span><span class="params">(<span class="keyword">struct</span> kvm_pgtable *pgt, u64 addr, u64 size,</span></span><br><span class="line"><span class="params">                     <span class="keyword">struct</span> kvm_pgtable_walker *walker)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walk_data</span> <span class="title">walk_data</span> =</span> &#123;</span><br><span class="line">                .pgt    = pgt,</span><br><span class="line">                .addr   = ALIGN_DOWN(addr, PAGE_SIZE),</span><br><span class="line">                .end    = PAGE_ALIGN(walk_data.addr + size),</span><br><span class="line">                .walker = walker,</span><br><span class="line">        &#125;;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> _kvm_pgtable_walk(&amp;walk_data);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>這個函式預期<code>pgt</code> 和<code>walker</code> caller已經準備好了，再加上利用傳進來的<code>addr</code> 和<code>size</code> 製作出這次所使用的<code>kvm_pgtalbe_walk_data</code>，然後呼叫<code>_kvm_pgtable_walk</code>。</p>
+<h3 id="kvm-pgtable-walk-1"><a href="#kvm-pgtable-walk-1" class="headerlink" title="_kvm_pgtable_walk"></a><code>_kvm_pgtable_walk</code></h3><p>這個函式負責各個root page，見註解</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> _kvm_pgtable_walk(<span class="keyword">struct</span> kvm_pgtable_walk_data *data)</span><br><span class="line">&#123;</span><br><span class="line">        u32 idx;</span><br><span class="line">        <span class="type">int</span> ret = <span class="number">0</span>;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable</span> *<span class="title">pgt</span> =</span> data-&gt;pgt;</span><br><span class="line">        u64 limit = BIT(pgt-&gt;ia_bits);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (data-&gt;addr &gt; limit || data-&gt;end &gt; limit) <span class="comment">// 範圍檢查</span></span><br><span class="line">                <span class="keyword">return</span> -ERANGE;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (!pgt-&gt;pgd) <span class="comment">// 檢查有沒有root page table</span></span><br><span class="line">                <span class="keyword">return</span> -EINVAL;</span><br><span class="line">        <span class="comment">// 在某些系統設定之下，ARMv8的stage 2 page table root page可以不只一頁，</span></span><br><span class="line">        <span class="comment">// 而是連續多頁(&lt; 16頁)，如果walk的範圍很大，就可能要走多個root pages</span></span><br><span class="line">        <span class="comment">// 這個for loop就是loop過這些root pages</span></span><br><span class="line">        <span class="keyword">for</span> (idx = kvm_pgd_page_idx(data); data-&gt;addr &lt; data-&gt;end; ++idx) &#123;</span><br><span class="line">                <span class="comment">// 每個循環ptep指向當前root page</span></span><br><span class="line">                <span class="type">kvm_pte_t</span> *ptep = &amp;pgt-&gt;pgd[idx * PTRS_PER_PTE];</span><br><span class="line">                <span class="comment">// 呼叫更底層的實作函式</span></span><br><span class="line">                ret = __kvm_pgtable_walk(data, ptep, pgt-&gt;start_level);</span><br><span class="line">                <span class="keyword">if</span> (ret)</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-walk-2"><a href="#kvm-pgtable-walk-2" class="headerlink" title="__kvm_pgtable_walk"></a><code>__kvm_pgtable_walk</code></h3><p>這個函式loop過一個page的entries</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> __kvm_pgtable_walk(<span class="keyword">struct</span> kvm_pgtable_walk_data *data,</span><br><span class="line">                &gt;             <span class="type">kvm_pte_t</span> *pgtable, u32 level)</span><br><span class="line">&#123;</span><br><span class="line">        u32 idx;</span><br><span class="line">        <span class="type">int</span> ret = <span class="number">0</span>;</span><br><span class="line">        <span class="comment">// 如果當前的page table level超過最大值(4)就錯誤退出</span></span><br><span class="line">        <span class="keyword">if</span> (WARN_ON_ONCE(level &gt;= KVM_PGTABLE_MAX_LEVELS))</span><br><span class="line">                <span class="keyword">return</span> -EINVAL;</span><br><span class="line">        <span class="comment">// 利用kvm_pgtable_idx計算開始訪問的index</span></span><br><span class="line">        <span class="keyword">for</span> (idx = kvm_pgtable_idx(data, level); idx &lt; PTRS_PER_PTE; ++idx) &#123;</span><br><span class="line">                <span class="comment">// 計算當前看的entry的位址</span></span><br><span class="line">                <span class="type">kvm_pte_t</span> *ptep = &amp;pgtable[idx];</span><br><span class="line">                <span class="comment">// 如果走完範圍了就退出</span></span><br><span class="line">                <span class="keyword">if</span> (data-&gt;addr &gt;= data-&gt;end)</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">                <span class="comment">// 把data和當前看的位址以及當前的level當作輸入</span></span><br><span class="line">                <span class="comment">// 呼叫實際操作的函式</span></span><br><span class="line">                ret = __kvm_pgtable_visit(data, ptep, level);</span><br><span class="line">                <span class="keyword">if</span> (ret)</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-visit"><a href="#kvm-pgtable-visit" class="headerlink" title="__kvm_pgtable_visit"></a><code>__kvm_pgtable_visit</code></h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">int</span> __kvm_pgtable_visit(<span class="keyword">struct</span> kvm_pgtable_walk_data *data,</span><br><span class="line">                                      <span class="type">kvm_pte_t</span> *ptep, u32 level)</span><br><span class="line">&#123;</span><br><span class="line">        <span class="type">int</span> ret = <span class="number">0</span>;</span><br><span class="line">        u64 addr = data-&gt;addr;</span><br><span class="line">        <span class="comment">// pte: 當前entry的&quot;值&quot;</span></span><br><span class="line">        <span class="type">kvm_pte_t</span> *childp, pte = *ptep;</span><br><span class="line">        <span class="comment">// 這個entry指到的是不是一個table?</span></span><br><span class="line">        <span class="type">bool</span> table = kvm_pte_table(pte, level);</span><br><span class="line">        <span class="class"><span class="keyword">enum</span> <span class="title">kvm_pgtable_walk_flags</span> <span class="title">flags</span> =</span> data-&gt;walker-&gt;flags;</span><br><span class="line">        <span class="comment">// 如果entry指到table而且訪問子節點前要呼叫</span></span><br><span class="line">        <span class="keyword">if</span> (table &amp;&amp; (flags &amp; KVM_PGTABLE_WALK_TABLE_PRE)) &#123;</span><br><span class="line">                <span class="comment">// kvm_pgtable_visitor_cb只是一個簡單的wrapper幫忙</span></span><br><span class="line">                <span class="comment">// 用傳入的參數呼叫walker-&gt;cb</span></span><br><span class="line">                ret = kvm_pgtable_visitor_cb(data, addr, level, ptep,</span><br><span class="line">                                             KVM_PGTABLE_WALK_TABLE_PRE);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 如果entry指到physical page(而不是下一層page table)</span></span><br><span class="line">        <span class="comment">// 而且訪問葉節點要呼叫cb</span></span><br><span class="line">        <span class="keyword">if</span> (!table &amp;&amp; (flags &amp; KVM_PGTABLE_WALK_LEAF)) &#123;</span><br><span class="line">                <span class="comment">// 呼叫cb</span></span><br><span class="line">                ret = kvm_pgtable_visitor_cb(data, addr, level, ptep,</span><br><span class="line">                                             KVM_PGTABLE_WALK_LEAF);</span><br><span class="line">                <span class="comment">// 由於ptep這個位址的內容有可能在呼叫cb時改變，例如cb allocate了下一層</span></span><br><span class="line">                <span class="comment">// page table讓這個entry指到它，所以這邊更新pte的值</span></span><br><span class="line">                pte = *ptep;</span><br><span class="line">                <span class="comment">// 也更新這個pte現在是不是指到table</span></span><br><span class="line">                table = kvm_pte_table(pte, level);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (ret)</span><br><span class="line">                <span class="keyword">goto</span> out;</span><br><span class="line">        <span class="comment">// 如果不是table(是葉節點)</span></span><br><span class="line">        <span class="keyword">if</span> (!table) &#123;</span><br><span class="line">                <span class="comment">// 使data-&gt;addr對齊現在這個page table level translation的大小</span></span><br><span class="line">                data-&gt;addr = ALIGN_DOWN(data-&gt;addr, kvm_granule_size(level));</span><br><span class="line">                <span class="comment">// 並使data-&gt;addr跨過現在這個level translation大小</span></span><br><span class="line">                data-&gt;addr += kvm_granule_size(level);</span><br><span class="line">                <span class="comment">// 處理完葉節點之後就可以退出</span></span><br><span class="line">                <span class="keyword">goto</span> out;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 執行到這裡代表當前entry指到table，所以使用kvm_pte_follow獲取下一層page table的位址</span></span><br><span class="line">        <span class="comment">// 值得注意的是entry是指向下一層table的實體位址，所以kvm_pte_follow裡面使用了</span></span><br><span class="line">        <span class="comment">// phys_to_virt把entry轉換成軟體存取的EL1虛擬記憶體位址</span></span><br><span class="line">        childp = kvm_pte_follow(pte, data-&gt;pgt-&gt;mm_ops);</span><br><span class="line">        <span class="comment">// 呼叫__kvm_pgtable_walk去走下一層page table</span></span><br><span class="line">        <span class="comment">// 這邊的程式邏輯見下方說明</span></span><br><span class="line">        ret = __kvm_pgtable_walk(data, childp, level + <span class="number">1</span>);</span><br><span class="line">        <span class="keyword">if</span> (ret)</span><br><span class="line">                <span class="keyword">goto</span> out;</span><br><span class="line">        <span class="comment">// 走完當前table entry而且訪問子節點之後要呼叫cb</span></span><br><span class="line">        <span class="keyword">if</span> (flags &amp; KVM_PGTABLE_WALK_TABLE_POST) &#123;</span><br><span class="line">                ret = kvm_pgtable_visitor_cb(data, addr, level, ptep,</span><br><span class="line">                                             KVM_PGTABLE_WALK_TABLE_POST);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">out:</span><br><span class="line">        <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Page table其實是一個多child的樹狀結構(4K page就是512個child)，這個page table walker使用了遞迴的方式來對其進行操作，還支持pre-order, post-order的邏輯，<code>level</code>代表第幾層，<code>__kvm_pgtable_visit</code>負責：</p>
+<ol>
+<li>在適當的條件對table進行操作(呼叫callbacks)</li>
+<li>推進<code>data-&gt;addr</code>的進度</li>
+<li>遇到<code>table</code>的時候遞迴呼叫<code>__kvm_pgtable_walk</code></li>
+</ol>
+<p>而<code>__kvm_pgtable_walk</code>負責一個page table裡面的entry的loop。</p>
+<h2 id="使用範例：create-hyp-mappings"><a href="#使用範例：create-hyp-mappings" class="headerlink" title="使用範例：create_hyp_mappings"></a>使用範例：<code>create_hyp_mappings</code></h2><p>Linux在初始化KVM的時候的執行模式是EL1，此時需要在進入EL2之前為其製作和設定好EL2所使用的page tables，使用的函式就是<code>create_hyp_mappings</code>。</p>
+<p><code>create_hyp_mappings</code>在KVM初始化重點函式之一<code>init_hyp_mode</code> 中被多次呼叫，分別替EL2 建立了以下幾個區域的mappings：</p>
+<ul>
+<li>EL2 code (<code>__hyp_text_start</code> ~ <code>__hyp_text_end</code>)</li>
+<li>EL2 read only data (<code>__hyp_rodata_start</code> ~ <code>__hyp_rodata_end</code>)</li>
+<li>EL1 read only data (<code>__start_rodata</code> ~ <code>__end_rodata</code>)</li>
+<li>EL2 BSS (<code>__hyp_bss_start</code> ~ <code>__hyp_bss_end</code>)</li>
+<li>EL1 BSS (<code>__hyp_bss_end</code> ~ <code>__bss_stop</code>)</li>
+<li>EL2 stack</li>
+<li>EL2 percpu area</li>
+</ul>
+<blockquote>
+<p>這個函式只是建立page tables，並不會進到EL2啟動EL2的address translation機制</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * create_hyp_mappings - duplicate a kernel virtual address range in Hyp mode</span></span><br><span class="line"><span class="comment"> * @from:       The virtual kernel start address of the range</span></span><br><span class="line"><span class="comment"> * @to:         The virtual kernel end address of the range (exclusive)</span></span><br><span class="line"><span class="comment"> * @prot:       The protection to be applied to this range</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * The same virtual address as the kernel virtual address is also used</span></span><br><span class="line"><span class="comment"> * in Hyp-mode mapping (modulo HYP_PAGE_OFFSET) to the same underlying</span></span><br><span class="line"><span class="comment"> * physical pages.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="type">int</span> <span class="title function_">create_hyp_mappings</span><span class="params">(<span class="type">void</span> *from, <span class="type">void</span> *to, <span class="keyword">enum</span> kvm_pgtable_prot prot)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="type">phys_addr_t</span> phys_addr;</span><br><span class="line">        <span class="type">unsigned</span> <span class="type">long</span> virt_addr;</span><br><span class="line">        <span class="comment">// 使用kern_hyp_va把輸入的EL1虛擬位址始末轉換成EL2虛擬位址</span></span><br><span class="line">        <span class="type">unsigned</span> <span class="type">long</span> start = kern_hyp_va((<span class="type">unsigned</span> <span class="type">long</span>)from);</span><br><span class="line">        <span class="type">unsigned</span> <span class="type">long</span> end = kern_hyp_va((<span class="type">unsigned</span> <span class="type">long</span>)to);</span><br><span class="line">        <span class="comment">// 判斷處理器是否處於EL2 (VHE模式)</span></span><br><span class="line">        <span class="keyword">if</span> (is_kernel_in_hyp_mode())</span><br><span class="line">                <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        <span class="comment">// pkvm相關，略</span></span><br><span class="line">        <span class="keyword">if</span> (!kvm_host_owns_hyp_mappings())</span><br><span class="line">                <span class="keyword">return</span> -EPERM;</span><br><span class="line">        <span class="comment">// 將起始與結束位址對齊頁邊界</span></span><br><span class="line">        start = start &amp; PAGE_MASK;</span><br><span class="line">        end = PAGE_ALIGN(end);</span><br><span class="line">        <span class="comment">// 迴圈loop過輸入範圍，每一次迴圈會利用`kvm_kaddr_to_phys`計算對應的物理位址，呼叫`__create_hyp_mappings` ，並前進一個`PAGE_SIZE`</span></span><br><span class="line">        <span class="keyword">for</span> (virt_addr = start; virt_addr &lt; end; virt_addr += PAGE_SIZE) &#123;</span><br><span class="line">                <span class="type">int</span> err;</span><br><span class="line"></span><br><span class="line">                phys_addr = kvm_kaddr_to_phys(from + virt_addr - start);</span><br><span class="line">                err = __create_hyp_mappings(virt_addr, PAGE_SIZE, phys_addr,</span><br><span class="line">                                            prot);</span><br><span class="line">                <span class="keyword">if</span> (err)</span><br><span class="line">                        <span class="keyword">return</span> err;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>註解其實就對這個函式有不少說明，作為輸入的<code>from</code>, <code>to</code> 是想要map給EL2的EL1虛擬位址區間，<code>prot</code> 則是讀寫執行等權限設定。有趣的是並不需要指定要map給EL2的虛擬位址，EL2的虛擬位址規劃KVM自身有機制決定，具體來說就是利用<code>kern_hyp_va</code> 把EL1的虛擬位址轉換成EL2的虛擬位址。</p>
+<h3 id="create-hyp-mappings"><a href="#create-hyp-mappings" class="headerlink" title="__create_hyp_mappings"></a><code>__create_hyp_mappings</code></h3><p>鎖上<code>kvm_hyp_pgd_mutex</code> 然後呼叫<code>kvm_pgtable_hyp_map</code>，注意<code>hyp_pgtable</code>即為page table walk所需的<code>kvm_pgtable</code></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> __create_hyp_mappings(<span class="type">unsigned</span> <span class="type">long</span> start, <span class="type">unsigned</span> <span class="type">long</span> size,</span><br><span class="line">                          <span class="type">unsigned</span> <span class="type">long</span> phys, <span class="keyword">enum</span> kvm_pgtable_prot prot)</span><br><span class="line">&#123;</span><br><span class="line">        <span class="type">int</span> err;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (WARN_ON(!kvm_host_owns_hyp_mappings()))</span><br><span class="line">                <span class="keyword">return</span> -EINVAL;</span><br><span class="line"></span><br><span class="line">        mutex_lock(&amp;kvm_hyp_pgd_mutex);</span><br><span class="line">        err = kvm_pgtable_hyp_map(hyp_pgtable, start, size, phys, prot);</span><br><span class="line">        mutex_unlock(&amp;kvm_hyp_pgd_mutex);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> err;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-hyp-map"><a href="#kvm-pgtable-hyp-map" class="headerlink" title="kvm_pgtable_hyp_map"></a><code>kvm_pgtable_hyp_map</code></h3><p>這個函式就會呼叫新的page table walker <code>kvm_pgtable_walk</code>了，呼叫之前製作所需的<code>kvm_pgtable_walker</code>(1)，和傳入的<code>hyp_pgtable</code>(參數<code>pgt</code>)一起傳給<code>kvm_pgtable_walk</code>(2)</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">kvm_pgtable_hyp_map</span><span class="params">(<span class="keyword">struct</span> kvm_pgtable *pgt, u64 addr, u64 size, u64 phys,</span></span><br><span class="line"><span class="params">                        <span class="keyword">enum</span> kvm_pgtable_prot prot)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="type">int</span> ret;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">hyp_map_data</span> <span class="title">map_data</span> =</span> &#123;</span><br><span class="line">                .phys   = ALIGN_DOWN(phys, PAGE_SIZE),</span><br><span class="line">                .mm_ops = pgt-&gt;mm_ops,</span><br><span class="line">        &#125;;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walker</span> <span class="title">walker</span> =</span> &#123; <span class="comment">// (1)</span></span><br><span class="line">                .cb     = hyp_map_walker,</span><br><span class="line">                .flags  = KVM_PGTABLE_WALK_LEAF,</span><br><span class="line">                .arg    = &amp;map_data,</span><br><span class="line">        &#125;;</span><br><span class="line"></span><br><span class="line">        ret = hyp_set_prot_attr(prot, &amp;map_data.attr);</span><br><span class="line">        <span class="keyword">if</span> (ret)</span><br><span class="line">                <span class="keyword">return</span> ret;</span><br><span class="line"></span><br><span class="line">        ret = kvm_pgtable_walk(pgt, addr, size, &amp;walker); <span class="comment">// (2)</span></span><br><span class="line">        dsb(ishst);</span><br><span class="line">        isb();</span><br><span class="line">        <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可想而知，作為<code>cb</code> ，只在碰到葉節點(<code>flags: KVM_PGTABLE_WALK_LEAF</code>)會被呼叫的<code>hyp_map_walker</code> 就會負責申請各級的page tables並安裝進適當的page table entries。</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%89%8D%E8%A8%80"><span class="top-box-text">前言</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E9%87%8D%E8%A6%81%E7%B5%90%E6%A7%8B"><span class="top-box-text">重要結構</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable"><span class="top-box-text">kvm_pgtable</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walker"><span class="top-box-text">kvm_pgtable_walker</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walk-data"><span class="top-box-text">kvm_pgtable_walk_data</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E6%96%B0walker%E5%AF%A6%E4%BD%9C"><span class="top-box-text">新walker實作</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walk"><span class="top-box-text">kvm_pgtable_walk</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walk-1"><span class="top-box-text">_kvm_pgtable_walk</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walk-2"><span class="top-box-text">__kvm_pgtable_walk</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-visit"><span class="top-box-text">__kvm_pgtable_visit</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E4%BD%BF%E7%94%A8%E7%AF%84%E4%BE%8B%EF%BC%9Acreate-hyp-mappings"><span class="top-box-text">使用範例：create_hyp_mappings</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#create-hyp-mappings"><span class="top-box-text">__create_hyp_mappings</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-hyp-map"><span class="top-box-text">kvm_pgtable_hyp_map</span></a></li></ol></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/linux_symbols/">
+          <h3 class="post-title">
+            Next: Looking for Kernel Symbol Addresses in the Linux Kernel Image
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>⟪Linux 0.12 內核完全註釋v5.0⟫ 閱讀心得</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="⟪Linux 0.12 內核完全註釋v5.0⟫ 閱讀心得, blog keywords">
+<meta name="description" content="
+這是一本線上可取得的免費書籍，作者為趙炯博士，現為同济大学机械工程学院机械电子教研室副教授，可於作者網站 www.oldlinux.org 下載這本書
+
+故事這本書是2019二月同學介紹給我的，我甚至記得我們是晚上在學校福利社外面遇到。在">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">⟪Linux 0.12 內核完全註釋v5.0⟫ 閱讀心得</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2021-02-09</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>這是一本線上可取得的免費書籍，作者為趙炯博士，現為同济大学机械工程学院机械电子教研室副教授，可於作者網站 <a target="_blank" rel="noopener" href="http://www.oldlinux.org/">www.oldlinux.org</a> 下載這本書</p>
+</blockquote>
+<h2 id="故事"><a href="#故事" class="headerlink" title="故事"></a>故事</h2><p>這本書是2019二月同學介紹給我的，我甚至記得我們是晚上在學校福利社外面遇到。在回家後讀了序言和第一章我就知道一定要讀這本書。至於為什麼，是因為我一直對作業系統很有興趣，具體來說是想要知道一個OS到底是怎麼寫出來的，而好笑的是在學校修了作業系統之後這個問題完全沒有獲得解答。</p>
+<p>如同書上序言所述，無論是大部分學校的OS課程，或者各種教作業系統的書，都只能直觀的描述OS的重點功能和概念，或者拿出幾行程式碼來討論。在沒有對整個code base有綜觀的理解的情況下學習起來容易有盲人摸象、浮沙築高臺的感覺，說難聽一點就是不知道實際上在幹嘛，而且抓不到整體的結構，更別說學到怎麼寫作業系統了。</p>
+<p>所以我一頭栽進去，一千多頁的書不會幾週就讀完，我有空就幾頁幾頁的看。前三章是先備知識，不難，但讀了第四章，介紹x86架構我就知道要另外找其他資源加強，不然後面一定讀不下去，所以我暫時擱著這本，花了兩個月時間讀過⟪x86匯編語言 從實模式到保護模式⟫，把x86這個洞補起來。</p>
+<p>接著是第六、七章，講解開機和初始化的部分。這兩章有承先啟後的效果，因為開始有講解程式碼的註釋，必須了解前幾章的內容才能理解這裡的程式所運行的效果、環境以及用途。我還記得第六章開機的內容全部都是x86組合語言，讀起來真的有點痛苦又很慢，在讀完之後，知道後面大都是C code的情況下真的有解脫的感覺，不過看著程式一行一行的建構出電腦的初始運作環境，感受還是踏實的。第七章是個很神奇的章節，OS進行最後的準備工作，準備讓使用者使用。看到中間突然有個頓悟的感覺，整個Linux0.12內核的運作在腦海中形成，理解上的迷霧消散，有種「哦我突然懂了！」的感嘆，太讚。</p>
+<p>後面幾章大都在講解目錄樹中各個資料夾，一章講解一個資料夾。最後一章是用模擬和用真實機器編譯和執行這個舊版linux的方法。整本書掃完大概花了我一年，中間充滿許多的懷疑，也有一些焦慮。除了某些地方完全讀不懂之外，有時候進度奇慢無比，可能讀個兩三頁就要花我一個小時以上，偶爾會想我到底哪時候可以看完這本書。滿開心我有堅持到最後，翻到最後一頁的一天也到來了。</p>
+<p>當然，我沒有因為看完了這本書就知道怎麼寫一個OS，但至少從頭到尾體驗過了要實作一個內核需要哪些東西，對OS的認識也清晰了許多，現在的我和去年這時候的我對作業系統的認識可以說是不同級別的，能遇到這本書真的很幸運，對於往後的成長也有了更明確的方向啦。</p>
+<h2 id="介紹-與書中的內容說明相同"><a href="#介紹-與書中的內容說明相同" class="headerlink" title="介紹 (與書中的內容說明相同)"></a>介紹 (與書中的內容說明相同)</h2><p>本書對 Linux 操作系統早期內核(v0.12)全部源程式文件進行了詳細全面的注釋和說明，旨在讓讀者能夠在盡量短的時間內對Linux的工作機理獲得全面而深刻的理解，為進一步學習和研究現代Linux系統打下堅實的基礎。雖然分析的版本很低，但該內核已能夠正常編譯運行，並且其中已包括了 Linux 工作原理 的精髓。書中首先概要地介紹了 Linux 內核發展歷史，說明了各內核版本之間的主要區別和改進方面，給出了選擇 0.12 版內核源代碼作為研究對象的原因。然後給出了閱讀內核源代碼所需的相關基礎知識，概要介紹了運行 Linux 系統的 PC 硬體組成結構、編制內核使用的組合語言和 C 語言擴展部分，並且重點說明了 80x86 處理器在保護模式下運行的編程方法。接著介紹了內核程式碼概況，給出了內核源代碼目錄樹結構，並依據該組織結構對所有內核程式和文件進行了詳細描述和說明。為了加深讀者對內核工作原理的理解，書中最後一章給出了多個相關運行debug試驗。書中所有相關資料和資訊均可從網站 <a target="_blank" rel="noopener" href="http://www.oldlinux.org/">www.oldlinux.org</a> 下載。</p>
+<h2 id="先備知識"><a href="#先備知識" class="headerlink" title="先備知識"></a>先備知識</h2><p>如果要讀懂這本書，以一般資工系修課來說最好先修過系統程式、作業系統、計算機結構這三門課，而除了這些，Linux、執行檔格式、工具鏈、編譯鏈接流程等也最好有一定的了解，最後一項最重要的就是一定要熟悉x86架構，書上雖然花了第四章一整章來介紹，但我認為還是太少，短短68頁是沒有辦法好好交代完x86的。我自己在讀的時候感覺很不扎實，所以花了兩個月時間讀了⟪x86匯編語言 從實模式到保護模式⟫，再加上找了很多其他資料，才把x86摸得比較透徹。</p>
+<h3 id="相對的weak-parts"><a href="#相對的weak-parts" class="headerlink" title="相對的weak parts"></a>相對的weak parts</h3><p>這本書有一千多頁，算是很厚的一本書了，但是對於一個完整又詳細的計算機系統來說這樣的篇幅終究還是太少了，有些方面的介紹只是隨筆帶過或寫得比較艱澀，除了上面提到的x86架構之外，這裡再列出幾點：</p>
+<p>講解較少：</p>
+<ul>
+<li>a.out格式</li>
+<li>執行檔載入、鏈接過程與原理</li>
+<li>signal (restart syscall部分)</li>
+</ul>
+<p>我認為比較艱澀(有些我還很不懂)：</p>
+<ul>
+<li>MINIX檔案系統</li>
+<li>檔案系統掛載(mounting)</li>
+<li>鍵盤驅動</li>
+<li>tty概念</li>
+<li>底層I&#x2F;O</li>
+<li>memory management</li>
+</ul>
+<h3 id="其他書籍"><a href="#其他書籍" class="headerlink" title="其他書籍"></a>其他書籍</h3><p>以下是我讀過，覺得對於理解這本書有幫助的其他書籍：</p>
+<ul>
+<li>⟪The C Programming Language⟫</li>
+<li>⟪x86匯編語言 從實模式到保護模式⟫</li>
+<li>⟪程序員的自我修養⟫</li>
+</ul>
+<h2 id="閱讀建議"><a href="#閱讀建議" class="headerlink" title="閱讀建議"></a>閱讀建議</h2><p>以下是我在讀這本書時歸納出的一些閱讀方法，供大家參考：</p>
+<ul>
+<li>邊讀邊參考<a target="_blank" rel="noopener" href="https://elixir.bootlin.com/linux/0.12/source">Bootlin Elixir Cross Referencer</a>，好用</li>
+<li>心態<br>每個人程度不同，我認為可以先評估一下自己的程度調整閱讀的心態，決定要讀到什麼程度，該省略或者跳過那些部分，基本上不要假設自己很仔細讀就可以把整本書完全理解，除非程度真的很高而且非常熟悉以前個人電腦的各種運作細節。<br>以我的作法舉例，省略的部分我跳過了磁片、數學協處理器的章節，因為磁片現在漸漸淘汰，數學協處理器的部分對內核的了解也沒有很重要，至於讀code的時候如果沒辦法完全懂我也會先求把文字講解部分讀懂，而如果連文字都很難理解那我就果斷跳過，畢竟有些內容實在是很老舊，不然就是要額外花大量時間才能學懂，前提是不大幅影響自己對內核運作的理解。</li>
+<li>先看一個檔案前後的說明<br>書中會一個檔案一個檔案的說明講解，對每一個檔案會先有總體說明，然後進入程式碼（中間穿插非常多作者的註釋），然後檔案結束後會有補充說明。這邊建議先讀完前面的總體說明和最後的補充說明再讀程式本身，因為有些說明只有在後面的補充說明才有，我原本只照順序讀，然後讀到程式時摸不著頭緒，直到看到補充說明才知道程式在幹嘛。</li>
+<li>看一點說明就看一點code<br>程式的註釋很多時候長這樣：<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">func</span><span class="params">()</span></span><br><span class="line">&#123;</span><br><span class="line"><span class="comment">// 作者說明1</span></span><br><span class="line"><span class="comment">// 作者說明2</span></span><br><span class="line"><span class="comment">// 作者說明3</span></span><br><span class="line">    some code a;</span><br><span class="line">    some code b;</span><br><span class="line">    some code c;</span><br><span class="line">    some code d;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+會有一塊一塊的文字和一塊塊的code，在文字和code都很大塊的時候建議不要看完整個說明文字再讀code，建議看一句文字就看幾行程式，會比較好理解。<br>e.g. 說明1 -&gt; some code a -&gt; 說明2 -&gt; some code b, c -&gt; 說明3 -&gt; some code d.</li>
+<li>有些函式local variable跟argument都很多要注意<br>我發現在讀code時，因為local variable和function argument有時候很多會造成混亂，建議多加注意哪些值是傳進來的哪些是local。</li>
+<li>章節閱讀順序<br>我是照著順序讀的，不過後來發現這不是最好的做法，我覺得比較好的章節順序是把header file和記憶體管理放到前面：<br>（前面序號為閱讀順序）<br>1~7. 不變<ol start="8">
+<li>第十四章 header files</li>
+<li>第三章 記憶體管理</li>
+<li>第八章 kernel</li>
+<li>第十二章 file system</li>
+<li>第九章 block driver</li>
+<li>第十章 char driver</li>
+<li>第十五、十六、十七章<br>block driver 和 char driver 也可以放到記憶體管理前面，就看喜歡top-down還是bottom-up的方式。</li>
+</ol>
+</li>
+</ul>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E6%95%85%E4%BA%8B"><span class="top-box-text">故事</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E4%BB%8B%E7%B4%B9-%E8%88%87%E6%9B%B8%E4%B8%AD%E7%9A%84%E5%85%A7%E5%AE%B9%E8%AA%AA%E6%98%8E%E7%9B%B8%E5%90%8C"><span class="top-box-text">介紹 (與書中的內容說明相同)</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%85%88%E5%82%99%E7%9F%A5%E8%AD%98"><span class="top-box-text">先備知識</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E7%9B%B8%E5%B0%8D%E7%9A%84weak-parts"><span class="top-box-text">相對的weak parts</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E5%85%B6%E4%BB%96%E6%9B%B8%E7%B1%8D"><span class="top-box-text">其他書籍</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E9%96%B1%E8%AE%80%E5%BB%BA%E8%AD%B0"><span class="top-box-text">閱讀建議</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/first_patch/">
+          <h3 class="post-title">
+            Next: 第一次給Linux Kernel發patch
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

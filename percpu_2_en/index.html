@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>KVM ARM: EL2 per cpu variable (2): Initialization</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="KVM ARM: EL2 per cpu variable (2): Initialization, blog keywords">
+<meta name="description" content="
+Linux version: v6.0
+Architecture: ARMv8
+KVM flavor: NVHE
+
+IntroductionThe last post explained how EL2 per cpu variables">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">KVM ARM: EL2 per cpu variable (2): Initialization</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-11-30</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KVM/">
+              KVM
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/per-cpu-variables/">
+              per cpu variables
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux version: v6.0</p>
+<p>Architecture: ARMv8</p>
+<p>KVM flavor: NVHE</p>
+</blockquote>
+<h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><p>The last post explained how EL2 per cpu variables are defined and used. To review: EL2 per cpu variables are accessed by first acquiring the base address in the <code>.hyp.data..percpu</code> section, then add the per cpu offset stored in <code>tpidr_el2</code> to get the final address. There are two questions to be answered:</p>
+<ol>
+<li><p>How are the EL2 per cpu area allocated?</p>
+</li>
+<li><p>How are the per cpu offsets calculated and installed into <code>tpidr_el2</code>?</p>
+</li>
+</ol>
+<p>This post will answer these questions.</p>
+<h2 id="Memory-Allocation"><a href="#Memory-Allocation" class="headerlink" title="Memory Allocation"></a>Memory Allocation</h2><p>EL2 per cpu area’s memory is allocated in the KVM ARM initialization function <code>init_hyp_mode</code> :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * Allocate and initialize pages for Hypervisor-mode percpu regions.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line">for_each_possible_cpu(cpu) &#123;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">page</span> *<span class="title">page</span>;</span></span><br><span class="line">        <span class="type">void</span> *page_addr;</span><br><span class="line">        <span class="comment">// allocate memory with alloc_pages</span></span><br><span class="line">        <span class="comment">// nvhe_per_cpu_order() calculates how large the per cpu area is in pages,</span></span><br><span class="line">        <span class="comment">// then take log2 e.g. 8 pages = 2^3 pages，returns 3.</span></span><br><span class="line">        page = alloc_pages(GFP_KERNEL, nvhe_percpu_order());</span><br><span class="line">        <span class="keyword">if</span> (!page) &#123;</span><br><span class="line">                err = -ENOMEM;</span><br><span class="line">                <span class="keyword">goto</span> out_err;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// turn the struct page returned into linear address</span></span><br><span class="line">        page_addr = page_address(page);</span><br><span class="line">        <span class="comment">// copy the base values in .hyp.data..percpu into the allocated area</span></span><br><span class="line">        <span class="comment">// in case some per cpu variables are initialized</span></span><br><span class="line">        <span class="comment">// CHOOSE_NVHE_SYM is used to change the symbol&#x27;s name into an nvhe symbol name</span></span><br><span class="line">        <span class="comment">// CHOOSE_NVHE_SYM(__per_cpu_start) can be thought as the start of .hyp.data..percpu</span></span><br><span class="line">        <span class="built_in">memcpy</span>(page_addr, CHOOSE_NVHE_SYM(__per_cpu_start), nvhe_percpu_size());</span><br><span class="line">        <span class="comment">// store the allcated linear address into an EL1 array</span></span><br><span class="line">        kvm_arm_hyp_percpu_base[cpu] = (<span class="type">unsigned</span> <span class="type">long</span>)page_addr;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Map the allocated area to EL2 after allocation (same, in <code>init_hyp_mode</code>):</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">for_each_possible_cpu(cpu) &#123;</span><br><span class="line">        <span class="comment">// get the EL1 linear address that should be mapped to EL2 for this CPU</span></span><br><span class="line">        <span class="type">char</span> *percpu_begin = (<span class="type">char</span> *)kvm_arm_hyp_percpu_base[cpu];</span><br><span class="line">        <span class="type">char</span> *percpu_end = percpu_begin + nvhe_percpu_size();</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Map Hyp percpu pages */</span></span><br><span class="line">        <span class="comment">// self explanatory</span></span><br><span class="line">        err = create_hyp_mappings(percpu_begin, percpu_end, PAGE_HYP);</span><br><span class="line">        <span class="keyword">if</span> (err) &#123;</span><br><span class="line">                kvm_err(<span class="string">&quot;Cannot map hyp percpu region\n&quot;</span>);</span><br><span class="line">                <span class="keyword">goto</span> out_err;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Prepare the CPU initialization parameters */</span></span><br><span class="line">        <span class="comment">// see the next section for explanation</span></span><br><span class="line">        cpu_prepare_hyp_mode(cpu);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="Setting-up-tpidr-el2"><a href="#Setting-up-tpidr-el2" class="headerlink" title="Setting up tpidr_el2"></a>Setting up tpidr_el2</h2><p>We have discussed how the EL2 per cpu areas are allocated and how they are mapped to EL2. Next up is the offset calculation and <code>tpidr_el2</code> installation.</p>
+<h3 id="Calculating-per-cpu-offset"><a href="#Calculating-per-cpu-offset" class="headerlink" title="Calculating per cpu offset"></a>Calculating per cpu offset</h3><p><code>cpu_prepare_hyp_mode(cpu)</code> is responsible for filling up a <code>struct kvm_nvhe_init_params</code> . This structure stores the initial values of EL2 system registers, including <code>tpidr_el2</code> . The relevant parts are listed below:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">cpu_prepare_hyp_mode</span><span class="params">(<span class="type">int</span> cpu)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="comment">// use per_cpu_ptr_nvhe_sym to get the linear address of the symbol</span></span><br><span class="line">        <span class="comment">// for the current cpu</span></span><br><span class="line">        <span class="comment">// in this case, the symbol kvm_init_params</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_nvhe_init_params</span> *<span class="title">params</span> =</span> per_cpu_ptr_nvhe_sym(kvm_init_params, cpu);</span><br><span class="line">        </span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * Calculate the raw per-cpu offset without a translation from the</span></span><br><span class="line"><span class="comment">         * kernel&#x27;s mapping to the linear mapping, and store it in tpidr_el2</span></span><br><span class="line"><span class="comment">         * so that we can use adr_l to access per-cpu variables in EL2.</span></span><br><span class="line"><span class="comment">         * Also drop the KASAN tag which gets in the way...</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// here we calculate the per cpu offset</span></span><br><span class="line">        <span class="comment">// formula: A - B where:</span></span><br><span class="line">        <span class="comment">// A: the start of the per cpu area allocated using alloc_pages (linear address)</span></span><br><span class="line">        <span class="comment">// B: start of the base per cpu area (linear address)</span></span><br><span class="line">        params-&gt;tpidr_el2 = (<span class="type">unsigned</span> <span class="type">long</span>)kasan_reset_tag(per_cpu_ptr_nvhe_sym(__per_cpu_start, cpu)) -</span><br><span class="line">                            (<span class="type">unsigned</span> <span class="type">long</span>)kvm_ksym_ref(CHOOSE_NVHE_SYM(__per_cpu_start));</span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="Installing-tpidr-el2"><a href="#Installing-tpidr-el2" class="headerlink" title="Installing tpidr_el2"></a>Installing <code>tpidr_el2</code></h3><p>After saving the per cpu offset in <code>params→tpidr_el2</code> , the next step is to install the value in <code>tpidr_el2</code> , let’s first check out the call stack of the initialization of KVM ARM:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">kvm_init()</span><br><span class="line">--&gt; kvm_arch_init()</span><br><span class="line">    --&gt; init_subsystems()</span><br><span class="line">        --&gt; on_each_cpu(_kvm_arch_hardware_enable())</span><br><span class="line">            --&gt; cpu_hyp_reinit()</span><br><span class="line">                --&gt; cpu_init_context()</span><br><span class="line">                    --&gt; cpu_init_hyp_mode()</span><br><span class="line">                        --&gt; hyp_install_host_vector()</span><br><span class="line">                            --&gt; ___kvm_hyp_init</span><br></pre></td></tr></table></figure>
+
+<p><code>hyp_install_host_vector</code> runs in EL1, it calls a hypercall to enter EL2, passing in a physical pointer to a <code>struct kvm_nvhe_init_param</code> to initialize EL2. <code>___kvm_hyp_init</code> does the actual initialization.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">hyp_install_host_vector</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_nvhe_init_params</span> *<span class="title">params</span>;</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">arm_smccc_res</span> <span class="title">res</span>;</span></span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line">        <span class="comment">// get the EL1 linear address of the current cpu&#x27;s `kvm_init_params`</span></span><br><span class="line">        params = this_cpu_ptr_nvhe_sym(kvm_init_params);</span><br><span class="line">        <span class="comment">// this does an `hvc`, passing in</span></span><br><span class="line">        <span class="comment">// 1. function ID for `__kvm_hyp_init`</span></span><br><span class="line">        <span class="comment">// 2. physical address of `kvm_init_params` of the current cpu</span></span><br><span class="line">        <span class="comment">// 3. address of the local variable `res`, used to output exit code</span></span><br><span class="line">        arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__kvm_hyp_init), virt_to_phys(params), &amp;res);</span><br><span class="line">        WARN_ON(res.a0 != SMCCC_RET_SUCCESS);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>We’ll skip how that line <code>arm_smccc…</code> actually calls <code>hvc</code> , in short, EL2 can check <code>x0</code> for <code>__kvm_hyp_init</code> ‘s ID to confirm the reason why EL1 called <code>hvc</code> , and receive the pointer to <code>kvm_init_params</code> in <code>x1</code> . Then the execution goes to:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// arch/arm64/kvm/hyp/nvhe/hyp-init.S</span></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * Only uses x0..x3 so as to not clobber callee-saved SMCCC registers.</span></span><br><span class="line"><span class="comment">         *</span></span><br><span class="line"><span class="comment">         * x0: SMCCC function ID</span></span><br><span class="line"><span class="comment">         * x1: struct kvm_nvhe_init_params PA</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">__do_hyp_init:</span><br><span class="line">        <span class="comment">/* Check for a stub HVC call */</span> <span class="comment">// not in this case</span></span><br><span class="line">        cmp     x0, #HVC_STUB_HCALL_NR</span><br><span class="line">        b.lo    __kvm_handle_stub_hvc</span><br><span class="line">        <span class="comment">// check for __kvm_hyp_init (yes)</span></span><br><span class="line">        mov     x3, #KVM_HOST_SMCCC_FUNC(__kvm_hyp_init)</span><br><span class="line">        cmp     x0, x3</span><br><span class="line">        <span class="comment">// jump to 1:</span></span><br><span class="line">        b.eq    <span class="number">1f</span></span><br><span class="line">    </span><br><span class="line">        mov     x0, #SMCCC_RET_NOT_SUPPORTED</span><br><span class="line">        eret</span><br><span class="line">        <span class="comment">// move param&#x27;s physical address to x0</span></span><br><span class="line"><span class="number">1</span>:      mov     x0, x1</span><br><span class="line">        <span class="comment">// move return address to x3, in case ___kvm_hyp_init overwrites it</span></span><br><span class="line">        <span class="comment">// (___kvm_hyp_init) does not change x3</span></span><br><span class="line">        mov     x3, lr</span><br><span class="line">        <span class="comment">// jump to the processing function</span></span><br><span class="line">        bl      ___kvm_hyp_init   <span class="comment">// Clobbers x0..x2</span></span><br><span class="line">        <span class="comment">// recover lr</span></span><br><span class="line">        mov     lr, x3</span><br><span class="line">    </span><br><span class="line">        <span class="comment">/* Hello, World! */</span></span><br><span class="line">        <span class="comment">// put value indicating success into x0</span></span><br><span class="line">        mov     x0, #SMCCC_RET_SUCCESS</span><br><span class="line">        <span class="comment">// return back to EL1</span></span><br><span class="line">        eret</span><br></pre></td></tr></table></figure>
+
+<p>Lastly let’s check out <code>___kvm_hyp_init</code> :</p>
+<p>Actually <code>tpidr_el2</code> is set up in the very first two instructions, I’ll let you see for your self how it does it, you can also see how other EL2’s system registers are initialized in this function.</p>
+<blockquote>
+<p>Note that EL2 MMU is not enabled yet when this function is executed, therefore all memory accesses use physical addresses here.</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line">SYM_CODE_START_LOCAL(___kvm_hyp_init)</span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_TPIDR_EL2]</span><br><span class="line">        msr     tpidr_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_STACK_HYP_VA]</span><br><span class="line">        mov     sp, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_MAIR_EL2]</span><br><span class="line">        msr     mair_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_HCR_EL2]</span><br><span class="line">        msr     hcr_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_VTTBR]</span><br><span class="line">        msr     vttbr_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_VTCR]</span><br><span class="line">        msr     vtcr_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_PGD_PA]</span><br><span class="line">        phys_to_ttbr x2, x1</span><br><span class="line">alternative_if ARM64_HAS_CNP</span><br><span class="line">        orr     x2, x2, #TTBR_CNP_BIT</span><br><span class="line">alternative_else_nop_endif</span><br><span class="line">        msr     ttbr0_el2, x2</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * Set the PS bits in TCR_EL2.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        ldr     x0, [x0, #NVHE_INIT_TCR_EL2]</span><br><span class="line">        tcr_compute_pa_size x0, #TCR_EL2_PS_SHIFT, x1, x2</span><br><span class="line">        msr     tcr_el2, x0</span><br><span class="line"></span><br><span class="line">        isb</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Invalidate the stale TLBs from Bootloader */</span></span><br><span class="line">        tlbi    alle2</span><br><span class="line">        tlbi    vmalls12e1</span><br><span class="line">        dsb     sy</span><br><span class="line"></span><br><span class="line">        mov_q   x0, INIT_SCTLR_EL2_MMU_ON</span><br><span class="line">alternative_if ARM64_HAS_ADDRESS_AUTH</span><br><span class="line">        mov_q   x1, (SCTLR_ELx_ENIA | SCTLR_ELx_ENIB | \</span><br><span class="line">                     SCTLR_ELx_ENDA | SCTLR_ELx_ENDB)</span><br><span class="line">        orr     x0, x0, x1</span><br><span class="line">alternative_else_nop_endif</span><br><span class="line">        msr     sctlr_el2, x0</span><br><span class="line">        isb</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Set the host vector */</span></span><br><span class="line">        ldr     x0, =__kvm_hyp_host_vector</span><br><span class="line">        msr     vbar_el2, x0</span><br><span class="line"></span><br><span class="line">        ret</span><br><span class="line">SYM_CODE_END(___kvm_hyp_init)</span><br></pre></td></tr></table></figure>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Introduction"><span class="top-box-text">Introduction</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Memory-Allocation"><span class="top-box-text">Memory Allocation</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Setting-up-tpidr-el2"><span class="top-box-text">Setting up tpidr_el2</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Calculating-per-cpu-offset"><span class="top-box-text">Calculating per cpu offset</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Installing-tpidr-el2"><span class="top-box-text">Installing tpidr_el2</span></a></li></ol></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/percpu_2/">
+          <h3 class="post-title">
+            Next: KVM ARM: EL2 per cpu變數(2): 初始化
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>GIC筆記-虛擬中斷直接注入之硬體處理</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="GIC筆記-虛擬中斷直接注入之硬體處理, blog keywords">
+<meta name="description" content="前言最近幾週讀了ARM官方的”GICv3 and GICv4 Software Overview”，這本書從軟體的角度帶讀者認識GICv3 v4，而為了不讓篇幅過長，省略了比較特殊的使用場景 e.g. 硬體只實作一個security sta">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">GIC筆記-虛擬中斷直接注入之硬體處理</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-12-10</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/GIC/">
+              GIC
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>最近幾週讀了ARM官方的”GICv3 and GICv4 Software Overview”，這本書從軟體的角度帶讀者認識GICv3 v4，而為了不讓篇幅過長，省略了比較特殊的使用場景 e.g. 硬體只實作一個security state的狀況、使用legacy mode等等，閱讀完畢覺得是一個很好入門的介紹，是個可以讓人之後開始參考標準的spec “Arm® Generic Interrupt Controller Architecture Specification GIC architecture version 3 and version 4”的緩衝。</p>
+<p>在讀這種文件因為細節非常多，很容易見樹不見林，看完了一堆細節好像都懂了放遠來看就發現思緒連不起來。這篇blog是把書中內容簡單整理成我自己認為好理解的思考方式，會跳過很多基本內容，也會做很多沒有解釋的假設(例如使用一般的設定值)，從一個中斷被外設觸發的流程往外擴展說明，希望也能對想學習這塊的讀者有所幫助。</p>
+<p>閱讀過程中我使用Heptabase做了視覺化的筆記，方便理解，可以配合使用:</p>
+<p><a target="_blank" rel="noopener" href="https://app.heptabase.com/w/d4dfaf701a143f308454cb962ba9963472a27873bc9a2b2779e89d9430a972ac">https://app.heptabase.com/w/d4dfaf701a143f308454cb962ba9963472a27873bc9a2b2779e89d9430a972ac</a></p>
+<h2 id="Disclaimer"><a href="#Disclaimer" class="headerlink" title="Disclaimer"></a>Disclaimer</h2><p>此篇文章跳過一般中斷的發送，只說明虛擬中斷直接注入，所以Collection Table, Collection ID的說明跳過。</p>
+<p>此外，下面說明的hypervisor要做的工作列出的是必要但不充分的步驟，也很不詳細，只是架構上必須要完成的一些事情。</p>
+<h2 id="虛擬中斷直接注入步驟"><a href="#虛擬中斷直接注入步驟" class="headerlink" title="虛擬中斷直接注入步驟"></a>虛擬中斷直接注入步驟</h2><p>我們從一個外設發送一個LPI(Local Peripheral Interrupt)開始，步驟如下:</p>
+<ol>
+<li><p>外設知道ITS(Interrupt Translation Service)在bus上的位址，然後向<code>GITS_TRANSLATOR</code> 寫入Device ID和Event ID，發送一個中斷</p>
+</li>
+<li><p>ITS感知有LPI產生之後，硬體讀取<code>GITS_BASER[0..7]</code> 中<code>Type</code> 為device table的暫存器得到Device Table的位址。Device Table是一張存在記憶體中的表，負責把Device ID翻譯成對應的Interrupt Translation Table的基地址</p>
+</li>
+<li><p>硬體從Device Table中找Device ID對應的Interrupt Translation Table的基地址</p>
+</li>
+<li><p>硬體從Interrupt Translation Table中找Event ID所對應的值，有兩種可能(以下步驟假設第二種)</p>
+<ol>
+<li><p>對應出一個collection ID和INTID</p>
+</li>
+<li><p>對應出一個vINTID和vPE ID (硬體虛擬中斷注入)，有可能還有一個doorbell pINTID</p>
+</li>
+</ol>
+</li>
+<li><p>硬體從<code>GITS_BASER[0..7]</code> 中<code>Type</code> 為vPE Table的暫存器得到vPE Table的位址</p>
+</li>
+<li><p>硬體從vPE Table中找第四步得到的vPE ID所對應的target Redistributor以及virtual LPI Pending Table address</p>
+</li>
+<li><p>硬體觀察該target Redistributor的<code>GICR_VPENDBASER</code> 是否符合第六步得到的virtual LPI Pending Table address，有兩種可能(以下步驟假設符合)</p>
+<ol>
+<li><p>符合，直接進行硬體虛擬中斷注入</p>
+</li>
+<li><p>不符合，若第四步Interrupt Translation Table有提供doorbell pINTID，則傳入實體中斷</p>
+</li>
+</ol>
+</li>
+<li><p>正在執行VM的PE直接被中斷，開始執行guest的中斷處理流程，不需退出到hypervisor，使用Virtual CPU Interface與硬體溝通，並直接寫<code>EOI</code> 暫存器來結束中斷處理</p>
+</li>
+</ol>
+<p>以上便是虛擬中斷注入的處理過程，軟體必須在這之前做好各種初始化，其中包含:</p>
+<h3 id="Device-Table"><a href="#Device-Table" class="headerlink" title="Device Table"></a>Device Table</h3><p>Device Table全局只有一份，軟體必須分配所需的記憶體空間，並把起始位址填入<code>GITS_BASER[0..7]</code> 中<code>Type</code> 為device table的暫存器，接著把每個Device ID對應的Interrupt Translation Table起始位址填入</p>
+<h3 id="Interrupt-Translation-Table"><a href="#Interrupt-Translation-Table" class="headerlink" title="Interrupt Translation Table"></a>Interrupt Translation Table</h3><p>軟體必須為系統中的Device ID各分配一個Interrupt Translation Table的空間，每個Table會被Device Table中對應的一個entry指到，裡面填上各個Event ID對應的vINTID:vPE ID值，以及可選的doorbell pINTID</p>
+<h3 id="vPE-Table"><a href="#vPE-Table" class="headerlink" title="vPE Table"></a>vPE Table</h3><p>軟體必須分配一個vPE Table空間，並把起始位址填入<code>GITS_BASER[0..7]</code> 中<code>Type</code> 為vPE Table的暫存器，裡面填入vPE ID對應的target redistributor和vLPI Pending Table的位址</p>
+<h3 id="小結"><a href="#小結" class="headerlink" title="小結"></a>小結</h3><p>以上三種表可以讓一個外設觸發的Device ID:Event ID轉換成</p>
+<ul>
+<li><p>vINTID (虛擬中斷號)</p>
+</li>
+<li><p>target redistributor (哪個PE)</p>
+</li>
+<li><p>vLPI Pending Table address (該PE是否正在執行對應的vPE)</p>
+</li>
+</ul>
+<p>這些資訊使硬體能進行虛擬中斷直接注入</p>
+<h2 id="表格填寫"><a href="#表格填寫" class="headerlink" title="表格填寫"></a>表格填寫</h2><p>以上三種表</p>
+<ul>
+<li><p>Device Table</p>
+</li>
+<li><p>Interrupt Translation Table</p>
+</li>
+<li><p>vPE Table</p>
+</li>
+</ul>
+<p>在填入內容時其實都不是直接在寫記憶體，而是利用向ITS發送指令的方式讓硬體自動填入正確的entries，而發送指令的方式是寫入一個也是存在記憶體中的command queue，command queue所使用的空間也是軟體必須負責初始化，並把起始位址，queue head&#x2F;tail的位址填入<code>GITS_BASERn</code>, <code>GITS_CREADR</code>, <code>GITS_CWRITER</code> 暫存器中來告訴ITS要建立哪些mappings，這邊不深入解釋。</p>
+<h2 id="hypervisor設定虛擬中斷直接注入"><a href="#hypervisor設定虛擬中斷直接注入" class="headerlink" title="hypervisor設定虛擬中斷直接注入"></a>hypervisor設定虛擬中斷直接注入</h2><p>假設VM <code>x</code> 的 vPE <code>y</code>，跑在PE <code>z</code>上希望直接獲取Device ID <code>d</code>, Event id <code>e</code>的中斷，而虛擬中斷號是<code>f</code>:</p>
+<ol>
+<li><p>將<code>d:e</code>這個組合在對應的Interrupt Translation Table entry填入vINID = <code>f</code>, vPE ID = <code>y</code></p>
+</li>
+<li><p>vPE Table中 <code>y</code>的entry要填上<code>z</code>的redistributor以及<code>y</code>所使用的vLPI Pending Table位址</p>
+</li>
+</ol>
+<h2 id="hypervisor搬遷vPE"><a href="#hypervisor搬遷vPE" class="headerlink" title="hypervisor搬遷vPE"></a>hypervisor搬遷vPE</h2><p>假設hypervisor想把vPE <code>y</code> 要從PE <code>x1</code> 搬遷到<code>x2</code> 必須操作:</p>
+<ol start="12">
+<li><p><code>x1</code> redistributor的<code>GICR_VPENDBASER</code> 清掉，搬到<code>x2</code> redistributor的<code>GICR_VPENDBASER</code></p>
+</li>
+<li><p>把vPE Table vPE ID <code>y</code> 的target redistributor從<code>x1</code> 的改成<code>x2</code> 的</p>
+</li>
+</ol>
+<h2 id="各名詞性質整理"><a href="#各名詞性質整理" class="headerlink" title="各名詞性質整理"></a>各名詞性質整理</h2><ul>
+<li><p>PE: Processing Element</p>
+<ul>
+<li>硬體</li>
+</ul>
+</li>
+<li><p>CPU Interface</p>
+<ul>
+<li>硬體，使用<code>mrs</code> , <code>msr</code> 指令控制</li>
+</ul>
+</li>
+<li><p>Redistributor</p>
+<ul>
+<li><p>硬體，使用MMIO控制</p>
+</li>
+<li><p>每個PE一份</p>
+</li>
+</ul>
+</li>
+<li><p>Distributor</p>
+<ul>
+<li><p>硬體，使用MMIO控制</p>
+</li>
+<li><p>一個GIC一個</p>
+</li>
+</ul>
+</li>
+<li><p>Interrupt Translation Service</p>
+<ul>
+<li><p>硬體，使用MMIO控制</p>
+</li>
+<li><p>可能多個，這篇文章假設一個</p>
+</li>
+</ul>
+</li>
+<li><p>Device Table</p>
+<ul>
+<li><p>軟體結構，必須分配記憶體</p>
+</li>
+<li><p>要寫他必須使用command queue</p>
+</li>
+</ul>
+</li>
+<li><p>Interrupt Translation Table</p>
+<ul>
+<li><p>軟體結構，必須分配記憶體</p>
+</li>
+<li><p>要寫他必須使用command queue</p>
+</li>
+</ul>
+</li>
+<li><p>vPE Table</p>
+<ul>
+<li><p>軟體結構，必須分配記憶體</p>
+</li>
+<li><p>要寫他必須使用command queue</p>
+</li>
+</ul>
+</li>
+<li><p>Command Queue</p>
+<ul>
+<li><p>軟體結構，必須分配記憶體</p>
+</li>
+<li><p>直接寫入指令使硬體操作</p>
+<ul>
+<li><p>Device Table</p>
+</li>
+<li><p>Interrupt Translation Table</p>
+</li>
+<li><p>vPE Table</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>LPI Configuration Table</p>
+<ul>
+<li><p>軟體結構，必須分配記憶體</p>
+</li>
+<li><p>直接寫入</p>
+</li>
+</ul>
+</li>
+<li><p>LPI Pending Table</p>
+<ul>
+<li><p>軟體結構，必須分配記憶體</p>
+</li>
+<li><p>直接寫入</p>
+</li>
+</ul>
+</li>
+<li><p>vLPI Configuration Table</p>
+<ul>
+<li><p>軟體結構，必須分配記憶體</p>
+</li>
+<li><p>直接寫入</p>
+</li>
+</ul>
+</li>
+<li><p>vLPI Pending Table</p>
+<ul>
+<li><p>軟體結構，必須分配記憶體</p>
+</li>
+<li><p>直接寫入</p>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%89%8D%E8%A8%80"><span class="top-box-text">前言</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Disclaimer"><span class="top-box-text">Disclaimer</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E8%99%9B%E6%93%AC%E4%B8%AD%E6%96%B7%E7%9B%B4%E6%8E%A5%E6%B3%A8%E5%85%A5%E6%AD%A5%E9%A9%9F"><span class="top-box-text">虛擬中斷直接注入步驟</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Device-Table"><span class="top-box-text">Device Table</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Interrupt-Translation-Table"><span class="top-box-text">Interrupt Translation Table</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#vPE-Table"><span class="top-box-text">vPE Table</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E5%B0%8F%E7%B5%90"><span class="top-box-text">小結</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E8%A1%A8%E6%A0%BC%E5%A1%AB%E5%AF%AB"><span class="top-box-text">表格填寫</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#hypervisor%E8%A8%AD%E5%AE%9A%E8%99%9B%E6%93%AC%E4%B8%AD%E6%96%B7%E7%9B%B4%E6%8E%A5%E6%B3%A8%E5%85%A5"><span class="top-box-text">hypervisor設定虛擬中斷直接注入</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#hypervisor%E6%90%AC%E9%81%B7vPE"><span class="top-box-text">hypervisor搬遷vPE</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%90%84%E5%90%8D%E8%A9%9E%E6%80%A7%E8%B3%AA%E6%95%B4%E7%90%86"><span class="top-box-text">各名詞性質整理</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/percpu_2_en/">
+          <h3 class="post-title">
+            Next: KVM ARM: EL2 per cpu variable (2): Initialization
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

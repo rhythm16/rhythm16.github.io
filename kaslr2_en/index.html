@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Linux ARM64 KASLR Implementation(2): Linear Mapping Randomization</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Linux ARM64 KASLR Implementation(2): Linear Mapping Randomization, blog keywords">
+<meta name="description" content="
+Linux version: v6.0
+Architecture: ARMv8
+
+This post is the continuation of Linux ARM64 KASLR Implementation(1): Kernel I">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Linux ARM64 KASLR Implementation(2): Linear Mapping Randomization</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2023-04-23</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KASLR/">
+              KASLR
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux version: v6.0</p>
+<p>Architecture: ARMv8</p>
+</blockquote>
+<p>This post is the continuation of <a href="../kaslr_en/">Linux ARM64 KASLR Implementation(1): Kernel Image Randomization</a>.</p>
+<h2 id="Implementation-mechanism-of-linear-address-randomization"><a href="#Implementation-mechanism-of-linear-address-randomization" class="headerlink" title="Implementation mechanism of linear address randomization"></a>Implementation mechanism of linear address randomization</h2><p>In the previous article, it was mentioned that in <code>__primary_switch</code>, the program called <code>__pi_kaslr_early_init</code> to obtain the random offset used by KASLR and stored the low 20 bits in register <code>x24</code>. Then in <code>__primary_switched</code>, the value of <code>x24</code> was stored in <code>memstart_offset_seed</code>.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">SYM_FUNC_START_LOCAL(__primary_switched)</span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> CONFIG_RANDOMIZE_BASE</span></span><br><span class="line">        adrp    x5, memstart_offset_seed        <span class="comment">// Save KASLR linear map seed    </span></span><br><span class="line">        strh    w24, [x5, :lo12:memstart_offset_seed]</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line">SYM_FUNC_END(__primary_switched)</span><br></pre></td></tr></table></figure>
+
+<p><code>memstart_offset_seed</code> is defined in <code>arch/arm64/kernel/kaslr.c</code> :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">u16 __initdata memstart_offset_seed;</span><br></pre></td></tr></table></figure>
+
+<p>As you can see, it is a <code>u16</code>, so <code>strh</code> is used above to leave the remaining 16 bits of its random value.</p>
+<h3 id="arm64-memblock-init"><a href="#arm64-memblock-init" class="headerlink" title="arm64_memblock_init"></a><code>arm64_memblock_init</code></h3><p>The initialization process will then proceed to the <code>arm64_memblock_init</code> function.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">start_kernel</span><br><span class="line"> --&gt; setup_arch</span><br><span class="line">      --&gt; arm64_memblock_init</span><br><span class="line">      --&gt; paging_init</span><br></pre></td></tr></table></figure>
+
+<p>Extracting the part related to KASLR:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> __init <span class="title function_">arm64_memblock_init</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * Select a suitable value for the base of physical memory.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// Set memstart_addr to the address where DRAM starts (and then perform an alignment).</span></span><br><span class="line">        memstart_addr = round_down(memblock_start_of_DRAM(),</span><br><span class="line">                                   ARM64_MEMSTART_ALIGN);</span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line">        <span class="comment">// if KASLR is enabled</span></span><br><span class="line">        <span class="keyword">if</span> (IS_ENABLED(CONFIG_RANDOMIZE_BASE)) &#123;</span><br><span class="line">                <span class="comment">// get the 16 bit random value</span></span><br><span class="line">                <span class="keyword">extern</span> u16 memstart_offset_seed;</span><br><span class="line">                <span class="comment">// Read the size of the physical address range supported by the CPU.</span></span><br><span class="line">                u64 mmfr0 = read_cpuid(ID_AA64MMFR0_EL1);</span><br><span class="line">                <span class="type">int</span> parange = cpuid_feature_extract_unsigned_field(</span><br><span class="line">                                        mmfr0, ID_AA64MMFR0_PARANGE_SHIFT);</span><br><span class="line">                <span class="comment">// linear_region_size is the size of the linear mapping range calculated by the kernel</span></span><br><span class="line">                <span class="comment">// subtract the physical address range size from linear_region_size to obtain range</span></span><br><span class="line">                <span class="comment">// so range represents how much space there is for movement of physical addresses within the linear mapping range</span></span><br><span class="line">                s64 range = linear_region_size -</span><br><span class="line">                            BIT(id_aa64mmfr0_parange_to_phys_shift(parange));</span><br><span class="line">    </span><br><span class="line">                <span class="comment">/*</span></span><br><span class="line"><span class="comment">                 * If the size of the linear region exceeds, by a sufficient</span></span><br><span class="line"><span class="comment">                 * margin, the size of the region that the physical memory can</span></span><br><span class="line"><span class="comment">                 * span, randomize the linear region as well.</span></span><br><span class="line"><span class="comment">                 */</span></span><br><span class="line">                <span class="comment">// if the random value is not 0, and the movement space is greater than</span></span><br><span class="line">                <span class="comment">// ARM64_MEMSTART_ALIGN (there is enough space for randomization), then</span></span><br><span class="line">                <span class="comment">// the method of changing memstart_addr is used to randomize the linear space.</span></span><br><span class="line">                <span class="keyword">if</span> (memstart_offset_seed &gt; <span class="number">0</span> &amp;&amp; range &gt;= (s64)ARM64_MEMSTART_ALIGN) &#123;</span><br><span class="line">                        range /= ARM64_MEMSTART_ALIGN;</span><br><span class="line">                <span class="comment">// The value used to subtract in the following line is not very</span></span><br><span class="line">                <span class="comment">// easy to understand. It can be rearranged mathematically to imagine</span></span><br><span class="line">                <span class="comment">// it as (range * ARM64_MEMSTART_ALIGN) * (memstart_offset_seed &gt;&gt; 16),</span></span><br><span class="line">                <span class="comment">// which means (range original value, because range was divided by ARM64_MEMSTART_ALIGN earlier)</span></span><br><span class="line">                <span class="comment">// * (memstart_offset_seed / (1 &lt;&lt; 16), which is a random value between 0 and 1)</span></span><br><span class="line">                <span class="comment">// Therefore, the result is a random value between 0 and the original range.</span></span><br><span class="line">                        memstart_addr -= ARM64_MEMSTART_ALIGN *</span><br><span class="line">                                         ((range * memstart_offset_seed) &gt;&gt; <span class="number">16</span>);</span><br><span class="line">                &#125;</span><br><span class="line">        &#125;</span><br><span class="line"> </span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Why does changing <code>memstart_addr</code> change the address of the linear space?</p>
+<h2 id="Linear-Address-Randomization"><a href="#Linear-Address-Randomization" class="headerlink" title="Linear Address Randomization"></a>Linear Address Randomization</h2><p>Let’s take a look at the page table operations that actually randomize the linear space. The page table for the linear mapping is created in <code>paging_init</code> → <code>map_mem</code> :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> __init <span class="title function_">map_mem</span><span class="params">(<span class="type">pgd_t</span> *pgdp)</span></span><br><span class="line">&#123;</span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* map all the memory banks */</span></span><br><span class="line">        <span class="comment">// this loop calls __map_memblock to create a linear mapping</span></span><br><span class="line">        <span class="comment">// for all physical memory regions in the system.</span></span><br><span class="line">        for_each_mem_range(i, &amp;start, &amp;end) &#123;</span><br><span class="line">                <span class="keyword">if</span> (start &gt;= end)</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">                <span class="comment">/*</span></span><br><span class="line"><span class="comment">                 * The linear map must allow allocation tags reading/writing</span></span><br><span class="line"><span class="comment">                 * if MTE is present. Otherwise, it has the same attributes as</span></span><br><span class="line"><span class="comment">                 * PAGE_KERNEL.</span></span><br><span class="line"><span class="comment">                 */</span></span><br><span class="line">                <span class="comment">// start: start of the physical region</span></span><br><span class="line">                <span class="comment">// end: end of the physical region</span></span><br><span class="line">                <span class="comment">// pgdp is `swapper_pg_dir, the root of the page table that the</span></span><br><span class="line">                <span class="comment">// kernel is going to use later</span></span><br><span class="line">                __map_memblock(pgdp, start, end, pgprot_tagged(PAGE_KERNEL),</span><br><span class="line">                               flags);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="map-memblock"><a href="#map-memblock" class="headerlink" title="__map_memblock"></a><code>__map_memblock</code></h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> __init __map_memblock(<span class="type">pgd_t</span> *pgdp, <span class="type">phys_addr_t</span> start,</span><br><span class="line">                                  <span class="type">phys_addr_t</span> end, <span class="type">pgprot_t</span> prot, <span class="type">int</span> flags)</span><br><span class="line">&#123;</span><br><span class="line">        __create_pgd_mapping(pgdp, start, __phys_to_virt(start), end - start,</span><br><span class="line">                             prot, early_pgtable_alloc, flags);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>__create_pgd_mapping</code> is analyzed in detail in <a href="../page_table_en/">Linux ARM64 __create_pgd_mapping analysis</a>. The key point here is that a page table mapping from the physical address range <code>[start - end)</code> to the virtual address range <code>[__phys_to_virt(start) - __phys_to_virt(end))</code> is created here. This means that <code>__phys_to_virt</code> determines the virtual address of the linear mapping.</p>
+<h3 id="phys-to-virt"><a href="#phys-to-virt" class="headerlink" title="__phys_to_virt"></a><code>__phys_to_virt</code></h3><p>This macro is defined in <code>arch/arm64/include/asm/memory.h</code> :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> __phys_to_virt(x)       ((unsigned long)((x) - PHYS_OFFSET) | PAGE_OFFSET)</span></span><br></pre></td></tr></table></figure>
+
+<p>In the same file, <code>PHYS_OFFSET</code> is defined as <code>memstart_addr</code> (pretty much)</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">extern</span> s64                      memstart_addr;</span><br><span class="line"><span class="comment">/* PHYS_OFFSET - the physical address of the start of memory. */</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> PHYS_OFFSET             (&#123; VM_BUG_ON(memstart_addr &amp; 1); memstart_addr; &#125;)</span></span><br></pre></td></tr></table></figure>
+
+<p>So we are back to <code>memstart_addr</code>. In <code>arm64_memblock_init</code>, <code>memstart_addr</code> is subtracted by a random value, which leads to the randomization of <code>PHYS_OFFSET</code> and <code>__phys_to_virt</code>. Therefore, the virtual address of the linear mapping created by <code>paging_init</code> → <code>map_mem</code> → <code>___map_memblock</code> → <code>__create_pgd_mapping</code> is also randomized.</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Implementation-mechanism-of-linear-address-randomization"><span class="top-box-text">Implementation mechanism of linear address randomization</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#arm64-memblock-init"><span class="top-box-text">arm64_memblock_init</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Linear-Address-Randomization"><span class="top-box-text">Linear Address Randomization</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#map-memblock"><span class="top-box-text">__map_memblock</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#phys-to-virt"><span class="top-box-text">__phys_to_virt</span></a></li></ol></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/kaslr2/">
+          <h3 class="post-title">
+            Next: Linux ARM64 KASLR 實作分析(2): 線性位址隨機化
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

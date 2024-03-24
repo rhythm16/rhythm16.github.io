@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>幹嘛static inline?</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="幹嘛static inline?, blog keywords">
+<meta name="description" content="
+2020&#x2F;11&#x2F;25更新：這篇對一半吧，這篇比較完整，也比較正確
+
+忘記在哪時候看到這篇(我有所不知的 static inline function)，讀完覺得頗有趣的，來記錄一下。這篇是靠感覺打的，沒有實作跟去che">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">幹嘛static inline?</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2020-09-12</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/C/">
+              C
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>2020&#x2F;11&#x2F;25更新：<br>這篇對一半吧，<br><a target="_blank" rel="noopener" href="https://read01.com/zh-tw/3APOEG.html#.X75Tay2l1QJ">這篇</a>比較完整，也比較正確</p>
+</blockquote>
+<p>忘記在哪時候看到<a target="_blank" rel="noopener" href="https://medium.com/@hauyang/%E6%88%91%E6%9C%89%E6%89%80%E4%B8%8D%E7%9F%A5%E7%9A%84-static-inline-b363892b7450">這篇(我有所不知的 static inline function)</a>，讀完覺得頗有趣的，來記錄一下。<br>這篇是靠感覺打的，沒有實作跟去check組合語言，因為我覺得觀念對了，真的有不確定的地方再試就好。</p>
+<h2 id="static"><a href="#static" class="headerlink" title="static"></a>static</h2><p><code>static</code>代表符號只在這個編譯單元有效，編譯單元就是一個.c檔在預處理器處理之後的東東(include, define那些被展開之後)。</p>
+<h2 id="inline"><a href="#inline" class="headerlink" title="inline"></a>inline</h2><p><code>inline</code>則是建議編譯器可以把函式內嵌在呼叫的地方，節省資源提升速度。</p>
+<h2 id="那幹嘛要寫在一起勒"><a href="#那幹嘛要寫在一起勒" class="headerlink" title="那幹嘛要寫在一起勒"></a>那幹嘛要寫在一起勒</h2><p>其實可以反過來想，如果不一起寫，只寫<code>inline</code>，會怎樣？<br>好，現在編譯器看到一個<code>inline</code>函式，它會想：</p>
+<blockquote>
+<p>哦哦寫code的人建議<code>inline</code>，ㄟ但他不是<code>static</code>耶，這樣行不通啊，如果有其他編譯單元宣告了這個函式，想要鏈接怎麼辦？<br>哎沒辦法，只好放棄<code>inline</code>了，把這個函式獨立編譯吧</p>
+</blockquote>
+<p>上面那樣寫可能看不懂，來想想一個狀況：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">/* foo.c */</span><br><span class="line">inline void foo()</span><br><span class="line">&#123;</span><br><span class="line">    /* does something */</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">/* main.c */</span><br><span class="line">inline void foo();</span><br><span class="line"></span><br><span class="line">int main()</span><br><span class="line">&#123;</span><br><span class="line">    foo();</span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>因為<code>foo()</code>沒有<code>static</code>，main.c是可以宣告並使用foo.c的<code>foo()</code>的，而且可以獨立編譯main.c和foo.c：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -c main.c -o main.o</span><br><span class="line">$ gcc -c foo.c -o foo.o</span><br><span class="line">$ gcc main.o foo.o -o a.out</span><br></pre></td></tr></table></figure>
+<p>在獨立編譯main.c時，根本就沒有<code>foo()</code>的定義啊，所以也就不可能可以內嵌。</p>
+<p>不過，如果是加了<code>static</code>，那麼就不會出現其他編譯單元宣告foo.c的<code>foo()</code>並獨自編譯的狀況，也就能順利內嵌函式了。</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#static"><span class="top-box-text">static</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#inline"><span class="top-box-text">inline</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E9%82%A3%E5%B9%B9%E5%98%9B%E8%A6%81%E5%AF%AB%E5%9C%A8%E4%B8%80%E8%B5%B7%E5%8B%92"><span class="top-box-text">那幹嘛要寫在一起勒</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/linux_versions/">
+          <h3 class="post-title">
+            Next: Linux版本號意義
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

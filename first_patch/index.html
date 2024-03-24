@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>第一次給Linux Kernel發patch</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="第一次給Linux Kernel發patch, blog keywords">
+<meta name="description" content="一路的故事是滿意外的，有天跟同學吃飯聊到了我讀的32bit x86架構的memory reference，又再一次提醒了我我對於64bit一無所知的事實。回家手癢google了”x86_64 memory reference”，前幾個搜尋結">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">第一次給Linux Kernel發patch</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2020-10-28</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/LKML/">
+              LKML
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <p>一路的故事是滿意外的，有天跟同學吃飯聊到了我讀的32bit x86架構的memory reference，又再一次提醒了我我對於64bit一無所知的事實。回家手癢google了”x86_64 memory reference”，前幾個搜尋結果是linux kernel的<a target="_blank" rel="noopener" href="https://www.kernel.org/doc/Documentation/x86/x86_64/mm.txt">documentation</a>，瀏覽了一下竟然發現有句話讀起來怪怪的：</p>
+<blockquote>
+<p>“16M TB” might look weird at first sight, but it’s an easier to visualize size<br>notation than “16 EB”, which..(後省略)</p>
+</blockquote>
+<p>“easier”後面少了一個”way”啊！<br>這在平常可能不算什麼，就少個字，也不至於影響閱讀，但我馬上想到了<a target="_blank" rel="noopener" href="http://wiki.csie.ncku.edu.tw/User/jserv">jserv教授</a>之前在facebook發文提到了一個四歲小孩在爸爸工作時看到了kernel排版少了一個’&#x3D;’，爸爸就幫忙發了一個<a target="_blank" rel="noopener" href="https://www.reddit.com/r/linux/comments/2pqqla/kernel_commit_4_year_old_girl_fixes_formatting_to/">patch</a>，也被接受了，說明這種重要的大專案連排版這種小錯也是要修正的。</p>
+<p>我之前就聽過linux kernel mailing list跟貢獻給linux kernel的一些規則，不過一直沒有深入了解，剛好趁著找到文件缺漏的機會可以學習一下，畢竟菜雞如我就算想主動貢獻這類開源專案也會因為不知道要寫&#x2F;改什麼code而無法參與。</p>
+<h2 id="資料們"><a href="#資料們" class="headerlink" title="資料們"></a>資料們</h2><p>一開始不外乎就是開始各種google<br>我的流程幾乎完全照著這個</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/87530337">纪念第一次向Linux内核社区提交patch</a></li>
+</ul>
+<p>還有以下這幾個也稍微讀了一遍：</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://yaapb.wordpress.com/2012/12/14/10-things-you-need-to-do-before-sending-your-patch-to-lkml/">10 things you need to do before sending your patch to LKML</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.kernel.org/doc/html/latest/process/submitting-patches.html#submittingpatches">Documentation&#x2F;process&#x2F;submitting-patches</a></li>
+<li><a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/30268332/why-does-the-linux-kernel-repository-have-only-one-branch/30268416">Why does the Linux kernel repository have only one branch? [closed]
+</a></li>
+</ul>
+<p>連結裡頭跟網路上其他資料的流程不一定100%吻合，我認為是因為有些步驟被一些腳本自動化了，所以做法有新舊差異</p>
+<h2 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h2><blockquote>
+<p>這段非常大略的描述linux kernel社群運作方式，很多細節省略。我的經驗與所知非常非常的少，很有可能有錯誤、缺漏或容易產生誤會的地方</p>
+</blockquote>
+<p>Linux版本號意義可以參考<a target="_blank" rel="noopener" href="https://hackmd.io/@rhythm/B10t9i_Xw">這篇</a>。<br>Linux kernel開發社群的溝通方式是plain old email，要找人討論、聯絡維護者就是寄信 (github 上面的linux kernel只是一個mirror，即時顯示最新狀態)。社群有一個主要的mailing list，叫做Linux Kernel Mailing List (LKML)，就是個email廣播空間，可以進行討論，或是宣告事項。寄信到那個mailing list，所有有訂閱的人都會收到那封email。<br>所以對，LKML每天都有好幾百甚至上千封email，訂閱方式google查就有，訂閱前請三思。只想看看內容可以到<a target="_blank" rel="noopener" href="https://lkml.org/">這個連結</a><br>Linux kernel的大頭是初始作者本人Linus Torvalds，基本上code&#x2F;文字進到了他本人的git repository，就是”進了linux kernel”，但是一般人不會直接寄信給Linus，而是把自己修改的內容寄給Linus下面負責的維護者，並同時Cc LKML，等待自己的patch慢慢送到上游，最後進到Linus的repo。<br>維護者與維護者的溝通，還有Linus與維護者們的溝通大多不會Cc LKML，他們的工作方式我還沒有深入去查過。</p>
+<h2 id="步驟"><a href="#步驟" class="headerlink" title="步驟"></a>步驟</h2><p>第一步就是弄個source code來：<br>也可以用<code>git clone</code>，但下載實在太久了所以我下載tarball</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ wget https://github.com/torvalds/linux/archive/v5.9.tar.gz</span><br><span class="line">$ tar -zxvf v5.9.tar.gz <span class="comment"># decompress and untar</span></span><br></pre></td></tr></table></figure>
+<p>因為是下載壓縮包，所以是還沒有使用git:</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cd</span> linux-5.9</span><br><span class="line">$ git init</span><br><span class="line">$ git add .</span><br><span class="line">$ git commit -m <span class="string">&quot;orig&quot;</span></span><br><span class="line">$ git branch develop</span><br><span class="line">$ git checkout develop</span><br><span class="line"><span class="comment"># 以下 config 後面script會用到！</span></span><br><span class="line">$ git config --global user.email <span class="string">&quot;r09922117@csie.ntu.edu.tw&quot;</span></span><br><span class="line">$ git config --name user.name <span class="string">&quot;Wei Lin Chang&quot;</span></span><br></pre></td></tr></table></figure>
+<p>接著就進source把少的”way”加上去</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">$ vim Documentation/x86/x86_64/mm.rst</span><br><span class="line"><span class="comment"># 改好之後就commit</span></span><br><span class="line">$ git add .</span><br><span class="line">$ <span class="built_in">cd</span> ../../.. <span class="comment"># back to root directory</span></span><br><span class="line"><span class="comment"># commit:</span></span><br><span class="line">$ git commit -s -v</span><br></pre></td></tr></table></figure>
+<p>commit不加 -m 會自動跳出一個GNU nano讓你編輯commit message，而-s是跳出時自動加入一行<code>Signed-off-by: &quot;name&quot; &lt;email&gt;</code>的簽名，這是標準發kernel patch要加上的，所以建議使用。-v則是在下方顯示你所做更改的diff訊息，只是幫助撰寫commit message用。</p>
+<p>交patch是有標準格式的，如果沒弄好好心的maintainer可能會回信給你提醒你哪裡錯了，如果太誇張我猜他就直接不理你了，以下是格式：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">subsystemName: short description</span><br><span class="line"><span class="comment"># blank line</span></span><br><span class="line">patch content description</span><br><span class="line"><span class="comment"># blank line</span></span><br><span class="line">Signed-off-by: <span class="string">&quot;name&quot;</span> &lt;email&gt;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>第一行是子系統名稱以及patch標題，應盡量精簡到位，讓維護者一下就知道你做了什麼</li>
+<li>第二部分是patch的內容，時態用現在式，語態用主動形式</li>
+<li>第三部分是使用-s生成的簽名</li>
+<li>中間要有空行</li>
+</ul>
+<p>如果有不清楚的就回去看你改的檔案的commit歷史看看之前的人怎麼寫的，以下是我最後的message:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Documentation: x86: fix a missing word in x86_64/mm.rst.</span><br><span class="line"></span><br><span class="line">This patch adds a missing word in x86/x86_64/mm.rst, without which</span><br><span class="line">the note reads awkwardly.</span><br><span class="line"></span><br><span class="line">Signed-off-by: Wei Lin Chang &lt;r09922117@csie.ntu.edu.tw&gt;</span><br></pre></td></tr></table></figure>
+<p>接著生成patch:</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ git format-patch master</span><br></pre></td></tr></table></figure>
+<p>這指令與master branch比較，生出.patch檔，會放在root directory<br>再來用script檢查patch有沒有問題：<br>(光這個檢查的script就快7000行XD)</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ ./scripts/checkpatch.pl 0001-Documentation-x86-fix-a-missing-word-in-x86_64-mm.rs.patch</span><br><span class="line">total: 0 errors, 0 warnings, 8 lines checked</span><br><span class="line"></span><br><span class="line">0001-Documentation-x86-fix-a-missing-word-in-x86_64-mm.rs.patch has no obvious style problems and is ready for submission.</span><br></pre></td></tr></table></figure>
+<p>然後也是用script查看這個patch要給誰：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">$ ./scripts/get_maintainer.pl -f Documentation/x86/x86_64/mm.rst</span><br><span class="line"></span><br><span class="line">Thomas Gleixner &lt;tglx@linutronix.de&gt; (maintainer:X86 ARCHITECTURE (32-BIT AND 64-BIT))</span><br><span class="line">Ingo Molnar &lt;mingo@redhat.com&gt; (maintainer:X86 ARCHITECTURE (32-BIT AND 64-BIT))</span><br><span class="line">Borislav Petkov &lt;bp@alien8.de&gt; (maintainer:X86 ARCHITECTURE (32-BIT AND 64-BIT))</span><br><span class="line">x86@kernel.org (maintainer:X86 ARCHITECTURE (32-BIT AND 64-BIT))</span><br><span class="line"><span class="string">&quot;H. Peter Anvin&quot;</span> &lt;hpa@zytor.com&gt; (reviewer:X86 ARCHITECTURE (32-BIT AND 64-BIT))</span><br><span class="line">Jonathan Corbet &lt;corbet@lwn.net&gt; (maintainer:DOCUMENTATION)</span><br><span class="line">linux-kernel@vger.kernel.org (open list:X86 ARCHITECTURE (32-BIT AND 64-BIT))</span><br><span class="line">linux-doc@vger.kernel.org (open list:DOCUMENTATION)</span><br></pre></td></tr></table></figure>
+<p>使用<code>git send-email</code>來送信，先寄一次給自己測試看看</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ git send-email --to r09922117@csie.ntu.edu.tw \</span><br><span class="line">  0001-Documentation-x86-fix-a-missing-word-in-x86_64-mm.rs.patch</span><br></pre></td></tr></table></figure>
+<p>確認格式都正確沒有跑掉，就可以正式寄給maintainer &amp; LKML了！<br><code>git send-email</code>執行之後會請你確認，然後輸入密碼，寄出</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">$ git send-email --to corbet@lwn.net \</span><br><span class="line">                 --cc tglx@linutronix.de \</span><br><span class="line">                 --cc mingo@redhat.com \</span><br><span class="line">                 --cc bp@alien8.de \</span><br><span class="line">                 --cc x86@kernel.org \</span><br><span class="line">                 --cc hpa@zytor.com \</span><br><span class="line">                 --cc linux-kernel@vger.kernel.org \</span><br><span class="line">                 --cc linux-doc@vger.kernel.org \</span><br><span class="line">  0001-Documentation-x86-fix-a-missing-word-in-x86_64-mm.rs.patch</span><br></pre></td></tr></table></figure>
+<p>我收件人選擇Jonathan Corbet是因為顯示了他是Documentation的maintainer。</p>
+<h2 id="後記與一些疑問"><a href="#後記與一些疑問" class="headerlink" title="後記與一些疑問"></a>後記與一些疑問</h2><ul>
+<li>我寄了patch(10&#x2F;15)之後幾天都沒有收到回覆，以為會石沈大海，結果(10&#x2F;22)收到了回覆：<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Applied, thanks.</span><br><span class="line"></span><br><span class="line">jon</span><br></pre></td></tr></table></figure></li>
+<li>又過了幾天我去查才發現Jonathan Corbet就是Linux Device Driver作者本人XDD我完全有眼不識泰山，竟然有機會跟大師互發email實在是太酷了</li>
+<li>我一開始拿來改的tree似乎是錯誤的，我要改Documentation的話感覺應該是要使用Jonathan Corbet在lwn.net上的git tree來改才對</li>
+<li>這個Documentation的patch真的是超級新手友善，因為不是跑code所以很多的測試都省掉了，改code官方建議是要找四五台電腦compile跑看看確認沒問題再提patch</li>
+<li>現在的linux kernel是用sphinx來把.rst變成html，所以理論上我改Documentation也應該用sphinx測試過一次XD</li>
+<li>10&#x2F;25 Linux v5.10-rc1釋出，可以在信裡面看到Linus列了裡面有我commit的Jonathan Corbet的commit</li>
+<li>我沒有注意到merge window的問題，但運氣太好了剛好就在v5.10的其中發出去，不知道如果沒有在merge window中發patch會怎樣</li>
+<li><a target="_blank" rel="noopener" href="https://blog.ffwll.ch/2017/08/github-why-cant-host-the-kernel.html">Why Github can’t host the Linux Kernel Community</a></li>
+</ul>
+<h2 id="LMKL-org上的連結"><a href="#LMKL-org上的連結" class="headerlink" title="LMKL.org上的連結"></a>LMKL.org上的連結</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://lkml.org/lkml/2020/10/15/60">我的patch</a></li>
+<li><a target="_blank" rel="noopener" href="https://lkml.org/lkml/2020/10/21/669">Jonathan Corbet的回覆</a></li>
+<li><a target="_blank" rel="noopener" href="https://lkml.org/lkml/2020/10/23/849">Jonathan的GIT PULL</a></li>
+<li><a target="_blank" rel="noopener" href="https://lkml.org/lkml/2020/10/25/267">Linus: Linux v5.10-rc1</a></li>
+</ul>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E8%B3%87%E6%96%99%E5%80%91"><span class="top-box-text">資料們</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E8%83%8C%E6%99%AF"><span class="top-box-text">背景</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E6%AD%A5%E9%A9%9F"><span class="top-box-text">步驟</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%BE%8C%E8%A8%98%E8%88%87%E4%B8%80%E4%BA%9B%E7%96%91%E5%95%8F"><span class="top-box-text">後記與一些疑問</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#LMKL-org%E4%B8%8A%E7%9A%84%E9%80%A3%E7%B5%90"><span class="top-box-text">LMKL.org上的連結</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/static_inline/">
+          <h3 class="post-title">
+            Next: 幹嘛static inline?
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

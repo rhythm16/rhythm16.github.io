@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>extern &#34;C&#34; 如何使系統函式庫兼容C與C++</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="extern &#34;C&#34; 如何使系統函式庫兼容C與C++, blog keywords">
+<meta name="description" content="原始的問題故事是這樣的：如果我們有個C函式庫，裡面有函數例如：
+123456/* cfunc.c */ void awesome_C_function()&#123;    /* does nothing */&#125;
+你可能會想說：C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">extern &#34;C&#34; 如何使系統函式庫兼容C與C++</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2020-08-23</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/C/">
+              C
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <h2 id="原始的問題"><a href="#原始的問題" class="headerlink" title="原始的問題"></a>原始的問題</h2><p>故事是這樣的：<br>如果我們有個C函式庫，裡面有函數例如：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">/* cfunc.c */</span><br><span class="line"> </span><br><span class="line">void awesome_C_function()</span><br><span class="line">&#123;</span><br><span class="line">    /* does nothing */</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>你可能會想說：C函式庫，C++程式應該也可以用吧</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* main.cpp */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">awesome_C_function</span><span class="params">()</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">awesome_C_function</span>();</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>那編譯看看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -c cfunc.c</span><br><span class="line">$ g++ -c main.cpp</span><br><span class="line">$ g++ main.o cfunc.o -o a.out</span><br><span class="line">main.o: In <span class="keyword">function</span> `main`:</span><br><span class="line">main.cpp:(.text+0x5): undefined reference to `awesome_C_function()`</span><br><span class="line">collect2: error: ld returned 1 <span class="built_in">exit</span> status</span><br></pre></td></tr></table></figure>
+<p>問號？？為什麼會這樣勒<br>原因是g++在編譯C++程式時，會對符號(變數與函式名稱等等)進行符號修飾(<a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Name_mangling">name mangling</a>)，導致鏈結器在鏈結時找不到對應的符號名稱，對應到最後一行<code>collect2: error: ld returned 1 exit status</code></p>
+<p>如果使用<code>readelf</code>工具檢視各個編譯出的.o檔的符號表，就可以看出端倪：(注意不同版本之編譯器、作業系統結果可能不完全一樣)<br>main.o:</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ readelf -s main.o <span class="comment">#-s表示顯示符號表</span></span><br><span class="line"></span><br><span class="line">Symbol table `.symtab<span class="string">&#x27; contains 21 entries:</span></span><br><span class="line"><span class="string">   Num:    Value          Size Type    Bind   Vis      Ndx Name</span></span><br><span class="line"><span class="string">...</span></span><br><span class="line"><span class="string">    16: 0000000000000000     0 NOTYPE  GLOBAL DEFAULT  UND _Z18awesome_C_functionv</span></span><br><span class="line"><span class="string">...</span></span><br></pre></td></tr></table></figure>
+<p>cfunc.o:</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">$ readelf -s cfunc.o</span><br><span class="line"></span><br><span class="line">Symbol table `.symtab<span class="string">&#x27; contains 21 entries:</span></span><br><span class="line"><span class="string">   Num:    Value          Size Type    Bind   Vis      Ndx Name</span></span><br><span class="line"><span class="string">...</span></span><br><span class="line"><span class="string">     8: 0000000000000000     0 FUNC    GLOBAL DEFAULT    1 awesome_C_function</span></span><br><span class="line"><span class="string">...</span></span><br></pre></td></tr></table></figure>
+<p>雖然我們source code都是寫<code>awesome_C_function()</code>，因為C++有符號修飾，變成了兩個不同名字的符號，產生錯誤。</p>
+<h2 id="extern-“C”-如何解決問題"><a href="#extern-“C”-如何解決問題" class="headerlink" title="extern “C” 如何解決問題"></a>extern “C” 如何解決問題</h2><p>好在，C++有<code>extern &quot;C&quot;</code>語法，可以定義C符號，使其不做符號修飾，若修改main.cpp成</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* main.cpp */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> &#123;</span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">awesome_C_function</span><span class="params">()</span></span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">awesome_C_function</span>();</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>則程式可正常編譯，執行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ g++ -c main.cpp</span><br><span class="line">$ g++ main.o cfunc.o -o a.out</span><br><span class="line">$ ./a.out</span><br><span class="line">$</span><br></pre></td></tr></table></figure>
+<p>太好了，問題乍看之下解決了，不過如果我們想把函式庫標頭另外放在一個檔案，供人<code>#include</code>，會出現C不支援<code>extern &quot;C&quot;</code>的問題，也就是說如果我們這樣寫awesome.h:</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* awesome.h */</span></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> &#123;</span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">awesome_C_function</span><span class="params">()</span></span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>main.cpp:</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* main.cpp */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;awesome.h&quot;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="built_in">awesome_C_function</span>();</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>上面的main.cpp使用g++編譯完全沒有錯誤，但如果今天想寫C，並使用<code>awesome.h</code>函式庫的話：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">/* main.c */</span><br><span class="line"></span><br><span class="line">#include &quot;awesome.h&quot;</span><br><span class="line"></span><br><span class="line">int main()</span><br><span class="line">&#123;</span><br><span class="line">    awesome_C_function();</span><br><span class="line">    return 0;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>使用gcc編譯會直接報錯，錯誤內容就不貼出了，反正gcc在抱怨他根本看不懂include進來的extern “C”語法啊，那是C++專屬的。</p>
+<p>難道一個編譯好的C函式庫，要配套兩種標頭檔嗎，一個給C用，一個給C++用？<br>答案是不需要，使用編譯前的預處理器可以幫我們解決問題！<br>在編譯C++程式時，C++的編譯器會定義”__cplusplus”這個macro，所以只要把awesome.h寫成這樣就解決問題了。</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* awesome.h */</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> __cplusplus</span></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> &#123;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">awesome_C_function</span><span class="params">()</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> __cplusplus</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br></pre></td></tr></table></figure>
+
+<p>如此一來，無論是C還是C++程式，都可以<code>#include &quot;awesome.h&quot;</code>了，預處理器會自動的依情況展開，編譯、鏈結都會成功。</p>
+<p>這樣的技巧再幾乎所有的系統標頭檔都有用到。<br>本文內容來自<br><strong>俞甲子、石凡、潘愛民 (2009). ⟪程序員的自我修養⟫</strong><br>是我自己閱讀消化之後所做之筆記。</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%8E%9F%E5%A7%8B%E7%9A%84%E5%95%8F%E9%A1%8C"><span class="top-box-text">原始的問題</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#extern-%E2%80%9CC%E2%80%9D-%E5%A6%82%E4%BD%95%E8%A7%A3%E6%B1%BA%E5%95%8F%E9%A1%8C"><span class="top-box-text">extern “C” 如何解決問題</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/hello-world/">
+          <h3 class="post-title">
+            Next: Hello World
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Linux ARM64 KASLR 實作分析(1): 內核映像位址隨機化</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Linux ARM64 KASLR 實作分析(1): 內核映像位址隨機化, blog keywords">
+<meta name="description" content="
+Linux版本：v6.0
+處理器架構：ARMv8
+
+前言學作業系統其實很早就聽過有KASLR(Kernel Address Space Layout Randomization)這個東西了，聽起來就很酷，不過因為程度尚淺，再加上KASLR">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Linux ARM64 KASLR 實作分析(1): 內核映像位址隨機化</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-12-22</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KASLR/">
+              KASLR
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux版本：v6.0</p>
+<p>處理器架構：ARMv8</p>
+</blockquote>
+<h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>學作業系統其實很早就聽過有KASLR(Kernel Address Space Layout Randomization)這個東西了，聽起來就很酷，不過因為程度尚淺，再加上KASLR這種安全相關主題在學作業系統時不算是早期就會接觸到的核心功能，例如虛擬記憶體，檔案系統，CPU排程等等，所以一直沒有機會研究其實作機制。之前有空的時候有稍微深入google一些網路上的相關文章，可惜的是大多數KASLR相關資源只有概念上的解釋，或者非常簡單的帶過，缺的就是一個深入說明實作的文章。</p>
+<p>最近剛好有點時間，就趁機trace了這個我一直都很好奇的機制，會以兩篇文章進行簡單的總結，第一篇是內核映像位址的隨機化，第二篇是線性位址的隨機化，希望有所幫助。</p>
+<blockquote>
+<p>若沒有arm64 Linux kernel開機流程的概念，這篇應該會很難看懂</p>
+</blockquote>
+<h2 id="KASLR實作機制"><a href="#KASLR實作機制" class="headerlink" title="KASLR實作機制"></a>KASLR實作機制</h2><p>KASLR實作和ARM64 Linux kernel開機流程有緊密的關係，不過這篇目的是介紹KASLR而不是開機流程，所以會先說明執行環境，再從開機非常早期的<code>__primary_switch</code> 開始用程式講解。</p>
+<h3 id="執行環境說明"><a href="#執行環境說明" class="headerlink" title="執行環境說明"></a>執行環境說明</h3><p>開機到<code>__primary_switch</code> 時MMU尚未開啟，CPU各個重要的系統暫存器已經初始化完成，identity map的頁表也已經初始化，<code>x22</code> 存著FDT (Flat Device Tree)的位址。</p>
+<h3 id="primary-switch"><a href="#primary-switch" class="headerlink" title="__primary_switch"></a><code>__primary_switch</code></h3><p><code>__primary_switch</code> 的意思是”primary CPU switch on MMU”</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">SYM_FUNC_START_LOCAL(__primary_switch)</span><br><span class="line">        adrp    x1, reserved_pg_dir</span><br><span class="line">        adrp    x2, init_idmap_pg_dir</span><br><span class="line">        <span class="comment">// 開啟MMU，使用init_idmap_pg_dir裡準備好的identity map</span></span><br><span class="line">        bl      __enable_mmu</span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> CONFIG_RELOCATABLE</span></span><br><span class="line">        <span class="comment">// x23 = kernel image開頭的實體位址</span></span><br><span class="line">        adrp    x23, KERNEL_START</span><br><span class="line">        <span class="comment">// x23 = x23 % 2MB，大概率等於0，因為規定kernel實體對齊 = 2MB</span></span><br><span class="line">        and     x23, x23, MIN_KIMG_ALIGN - <span class="number">1</span></span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> CONFIG_RANDOMIZE_BASE</span></span><br><span class="line">        <span class="comment">// x0 = FDT 位址，當作__pi_kaslr_early_init的參數</span></span><br><span class="line">        mov     x0, x22</span><br><span class="line">        <span class="comment">// 臨時使用init_pg_end當作stack空間</span></span><br><span class="line">        adrp    x1, init_pg_end</span><br><span class="line">        mov     sp, x1</span><br><span class="line">        <span class="comment">// 不太確定這行指令的意義，可能就簡單清零</span></span><br><span class="line">        mov     x29, xzr</span><br><span class="line">        <span class="comment">// 見下方說明，返回之後x0 = KASLR使用的隨機偏移</span></span><br><span class="line">        bl      __pi_kaslr_early_init</span><br><span class="line">        <span class="comment">// x24 = x0 % 2MB</span></span><br><span class="line">        and     x24, x0, #SZ_2M - <span class="number">1</span>             <span class="comment">// capture memstart offset seed</span></span><br><span class="line">        <span class="comment">// x0 = x0 往下2MB對齊</span></span><br><span class="line">        bic     x0, x0, #SZ_2M - <span class="number">1</span></span><br><span class="line">        <span class="comment">// x23 = x23 + x0 = 0 + 隨機偏移</span></span><br><span class="line">        orr     x23, x23, x0                    <span class="comment">// record kernel offset</span></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">        <span class="comment">// 對KASLR不重要</span></span><br><span class="line">        bl      clear_page_tables</span><br><span class="line">        <span class="comment">// 這個呼叫建立kernel要跳到高位址之後所使用的mapping</span></span><br><span class="line">        <span class="comment">// 重要的是這個函式使用KIMAGE_VADDR + x23來算出kernel運行時</span></span><br><span class="line">        <span class="comment">// 的虛擬位址來建立RWX mapping，所以這個頁表的映射是已經隨機化的了</span></span><br><span class="line">        bl      create_kernel_mapping</span><br><span class="line"></span><br><span class="line">        adrp    x1, init_pg_dir</span><br><span class="line">        <span class="comment">// 在高位址使用這個頁表</span></span><br><span class="line">        load_ttbr1 x1, x1, x2</span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> CONFIG_RELOCATABLE</span></span><br><span class="line">        <span class="comment">// 見下方說明</span></span><br><span class="line">        bl      __relocate_kernel</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">        <span class="comment">// 見下方說明(__primary_switch末尾)</span></span><br><span class="line">        ldr     x8, =__primary_switched</span><br><span class="line">        adrp    x0, KERNEL_START                <span class="comment">// __pa(KERNEL_START)</span></span><br><span class="line">        br      x8</span><br><span class="line">SYM_FUNC_END(__primary_switch)</span><br></pre></td></tr></table></figure>
+
+<h3 id="kaslr-early-init"><a href="#kaslr-early-init" class="headerlink" title="kaslr_early_init"></a><code>kaslr_early_init</code></h3><p><code>kaslr_early_init</code> 所在的檔案<code>arch/arm64/kernel/pi/kaslr_early.c</code> 會因為Makefile的操作而使得所有裡面定義的符號都多上一個<code>__pi_</code> 前綴，所以上面使用<code>bl __pi_kaslr_early_init</code> 呼叫。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">asmlinkage u64 <span class="title function_">kaslr_early_init</span><span class="params">(<span class="type">void</span> *fdt)</span></span><br><span class="line">&#123;</span><br><span class="line">        u64 seed;</span><br><span class="line">        <span class="comment">// KASLR若於cmaline中被關閉則退出</span></span><br><span class="line">        <span class="keyword">if</span> (is_kaslr_disabled_cmdline(fdt))</span><br><span class="line">                <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        <span class="comment">// 從傳入的FDT位址分析是否有random seed </span></span><br><span class="line">        seed = get_kaslr_seed(fdt);</span><br><span class="line">        <span class="comment">// 若沒有：</span></span><br><span class="line">        <span class="keyword">if</span> (!seed) &#123;</span><br><span class="line">                <span class="comment">// 如果CPU沒有生成隨機數的能力，或者取得隨機數失敗則退出</span></span><br><span class="line">                <span class="keyword">if</span> (!__early_cpu_has_rndr() ||</span><br><span class="line">                    !__arm64_rndr((<span class="type">unsigned</span> <span class="type">long</span> *)&amp;seed))</span><br><span class="line">                        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * OK, so we are proceeding with KASLR enabled. Calculate a suitable</span></span><br><span class="line"><span class="comment">         * kernel image offset from the seed. Let&#x27;s place the kernel in the</span></span><br><span class="line"><span class="comment">         * middle half of the VMALLOC area (VA_BITS_MIN - 2), and stay clear of</span></span><br><span class="line"><span class="comment">         * the lower and upper quarters to avoid colliding with other</span></span><br><span class="line"><span class="comment">         * allocations.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// 我想了很久覺得這行的詳細解釋實在是不容易，牽扯到Linux的整體記憶體布局，</span></span><br><span class="line">        <span class="comment">// 決定先簡單解釋就好：</span></span><br><span class="line">        <span class="comment">// 這行使用random seed計算出一個適合的KASLR隨機偏移，並回傳</span></span><br><span class="line">        <span class="keyword">return</span> BIT(VA_BITS_MIN - <span class="number">3</span>) + (seed &amp; GENMASK(VA_BITS_MIN - <span class="number">3</span>, <span class="number">0</span>));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="relocate-kernel"><a href="#relocate-kernel" class="headerlink" title="__relocate_kernel"></a><code>__relocate_kernel</code></h3><p>去翻<code>__relocate_kernel</code> 實際的程式，會發現我把<code>CONFIG_RELR</code> 的部份拿掉了，這是因為我沒有研究那塊XD，所以無法和大家講解，不過不影響分析，而<code>defconfig</code> 也沒有用這個設定所以目前先跳過</p>
+<p>這個函式是KASLR非常重要的一個函式，它負責runtime relocation(執行時重定位)，Linux Kernel 編譯過程會在每個存取全局位址的地方產生一個relocation entry，而工具鏈在生成有KASLR功能的內核時，因為不知道最後執行的位址，所以必須要為直接使用全局位址的地方都生成一個relocation entry，讓動態鏈接器(kernel沒有，所以就是kernel自己)能夠在執行時，知道運行時位址之後進行重定位。 這些relocation entries會被集中起來成為kernel的一部分，<code>__relocate_kernel</code> 會iterate過所有的entries並且進行重定位。 </p>
+<blockquote>
+<p><a target="_blank" rel="noopener" href="https://github.com/ARM-software/abi-aa/blob/main/aaelf64/aaelf64.rst">這個reference</a> 記載了ARM relocation entry的各種格式，這邊用到的只有一種。</p>
+</blockquote>
+<p> ELF relocation entry的格式如下：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">        <span class="comment">// 需要重定位的位址，注意這個位址是編譯時決定的位址</span></span><br><span class="line">        Elf64_Addr      r_offset;</span><br><span class="line">        <span class="comment">// 符號表索引以及重定位種類</span></span><br><span class="line">        Elf64_Xword     r_info;</span><br><span class="line">        <span class="comment">// 一個重定位過程需要加上的值，意義由重定位種類決定</span></span><br><span class="line">        Elf64_Sxword    r_addend;</span><br><span class="line">&#125; Elf64_Rela;</span><br></pre></td></tr></table></figure>
+
+<p>KASLR只處理一種重定位，種類是<code>R_AARCH64_RELATIVE</code> ，這個種類的重定位處理方式為把<code>r_offset</code> 這個編譯虛擬位址對應的運行虛擬位址指向的地方改成：”<code>r_addend</code> 加上隨機偏移(也就是運行位址和編譯位址的差)”。這樣講可能很難理解，我們用一個例子說明，今天某個指令想要把<code>sym</code> 這個符號的位址load進暫存器<code>x0</code> ，那麼假設編譯結果是<code>ldr x0, #a0</code> ，這裡<code>#a0</code> 只是舉例，假設<code>sym</code> 這個符號在編譯時決定的位址是<code>0x500</code> ，假設<code>ldr x0, #a0</code> 指令的位址是<code>0x1000</code>，這個case產生的relocation entry就是<code>r_offset = 0x10a0</code> ，<code>r_addend = 0x500</code> 。再假設這個指令運行時位址是<code>0x3000</code> (所以<code>sym</code> 運行位址是<code>0x2500</code>) ，和編譯時差(偏移)<code>0x2000</code>，我們需要做的事情就是讀出<code>r_addend (0x500)</code> ，加上<code>0x2000</code>(運行和編譯的偏移)，然後存到<code>r_offset</code> + (運行和編譯的偏移)，也就是把<code>0x2500</code> 存到<code>0x10a0 + 0x2000 = 0x30a0</code> 這個位址。真正運行時<code>x0</code> 經過<code>ldr</code> 就會存著<code>0x2500</code> ，也就是運行時<code>sym</code> 的位址。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line">SYM_FUNC_START_LOCAL(__relocate_kernel)    </span><br><span class="line">        <span class="comment">/*    </span></span><br><span class="line"><span class="comment">         * Iterate over each entry in the relocation table, and apply the    </span></span><br><span class="line"><span class="comment">         * relocations in place.    </span></span><br><span class="line"><span class="comment">         */</span>    </span><br><span class="line">        <span class="comment">// x9 = 第一個entry的實體位址</span></span><br><span class="line">        adr_l   x9, __rela_start  </span><br><span class="line">        <span class="comment">// x10 = 最後一個entry的結束的實體位址</span></span><br><span class="line">        adr_l   x10, __rela_end    </span><br><span class="line">        <span class="comment">// x11 = kernel預設的虛擬位址</span></span><br><span class="line">        mov_q   x11, KIMAGE_VADDR               <span class="comment">// default virtual offset    </span></span><br><span class="line">        <span class="comment">// x11 += 隨機偏移，製作出隨機虛擬位址</span></span><br><span class="line">        add     x11, x11, x23                   <span class="comment">// actual virtual offset    </span></span><br><span class="line">        <span class="comment">// x9 &gt;= x10就跳到結束的地方</span></span><br><span class="line"><span class="number">0</span>:      cmp     x9, x10    </span><br><span class="line">        b.hs    <span class="number">1f</span>    </span><br><span class="line">        <span class="comment">// x12 = r_offset, x13 = r_info 並把x9移到下一個entry</span></span><br><span class="line">        ldp     x12, x13, [x9], #<span class="number">24</span>    </span><br><span class="line">        <span class="comment">// x14 = r_addend</span></span><br><span class="line">        ldr     x14, [x9, #<span class="number">-8</span>]   </span><br><span class="line">        <span class="comment">// r_info是R_AARCH64_RELATIVE嗎</span></span><br><span class="line">        cmp     w13, #R_AARCH64_RELATIVE    </span><br><span class="line">        <span class="comment">// 不是就跳過，處理下一個entry</span></span><br><span class="line">        b.ne    <span class="number">0b</span>    </span><br><span class="line">        <span class="comment">// x14 = r_addend + 隨機偏移</span></span><br><span class="line">        add     x14, x14, x23                   <span class="comment">// relocate  </span></span><br><span class="line">        <span class="comment">// 把(r_addend + 隨機偏移)這個值寫入(r_offset + 隨機偏移)這個地方，</span></span><br><span class="line">        <span class="comment">// 完成重定位</span></span><br><span class="line">        str     x14, [x12, x23]    </span><br><span class="line">        b       <span class="number">0b</span>    </span><br><span class="line"><span class="number">1</span>:</span><br><span class="line">        ret</span><br><span class="line"><span class="title function_">SYM_FUNC_END</span><span class="params">(__relocate_kernel)</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="primary-switch-末尾"><a href="#primary-switch-末尾" class="headerlink" title="__primary_switch 末尾"></a><code>__primary_switch</code> 末尾</h3><p><code>bl      __relocate_kernel</code> 結束之後馬上就出現了一個全局位址的讀取：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 這個讀取會產生一個relocation entry，而就在__relocate_kernel被重定位，</span></span><br><span class="line"><span class="comment">// 所以x8會拿到一個加過隨機偏移的__primary_switched的位址，</span></span><br><span class="line"><span class="comment">// 而create_kernel_mapping建立了有加上隨機偏移的mapping，</span></span><br><span class="line"><span class="comment">// 也在load_ttbr1 x1, x1, x2 安裝進ttbr1_el1，一切都打理完畢，</span></span><br><span class="line"><span class="comment">// 可以br跳到高位址繼續執行了</span></span><br><span class="line">ldr     x8, =__primary_switched</span><br><span class="line">adrp    x0, KERNEL_START                <span class="comment">// __pa(KERNEL_START)</span></span><br><span class="line">br      x8</span><br></pre></td></tr></table></figure>
+
+<h2 id="鏈接選項"><a href="#鏈接選項" class="headerlink" title="鏈接選項"></a>鏈接選項</h2><p>ARM64 Makefile 中有特別針對KASLR的鏈接選項：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">ifeq ($(CONFIG_RELOCATABLE), y)                                   </span><br><span class="line"># Pass --no-apply-dynamic-relocs to restore pre-binutils<span class="number">-2.27</span> behaviour                                   </span><br><span class="line"><span class="meta"># for relative relocs, since this leads to better Image compression                                   </span></span><br><span class="line"><span class="meta"># with the relocation offsets always being zero.                                   </span></span><br><span class="line">LDFLAGS_vmlinux         += -shared -Bsymbolic -z notext \                                   </span><br><span class="line">                        $(call ld-option, --no-apply-dynamic-relocs)                                   </span><br><span class="line">endif                                   </span><br></pre></td></tr></table></figure>
+
+<p>有四個選項：</p>
+<ul>
+<li><p><code>—no-apply-dynamic-relocs</code> 似乎和跳過的<code>CONFIG_RELR</code> 有關，不確定</p>
+</li>
+<li><p><code>-shared</code> 代表產生一個shared library</p>
+</li>
+<li><p><code>-Bsymbolic</code> 代表綁定這個shared library裡面所有的全局變數引用到這個shared library本身，目的應該是因為kernel不會有外部引用，所以不要讓<code>ld</code> 產生外部引用的relocation entry</p>
+</li>
+<li><p><code>-z notext</code> 讀了<code>ld</code> 的man page還是不大確定</p>
+</li>
+</ul>
+<h2 id="一些疑問"><a href="#一些疑問" class="headerlink" title="一些疑問"></a>一些疑問</h2><p>雖然經過上面的分析可以了解KASLR的運作方式，但也引出了不少問題，希望之後繼續累積能夠回答它們吧</p>
+<ul>
+<li><p>上面四個鏈接選項實際意義是什麼？加上與否的差別是什麼？</p>
+</li>
+<li><p>我原本以為關閉KASLR以後所有的relocation entry都會消失，但經過測試他們依然存在，這雖然不影響非KASLR kernel的運作但難道不會浪費空間嗎？</p>
+</li>
+<li><p>Linux kernel如何只讓工具鏈只生成一種<code>R_AARCH64_RELATIVE</code> 的relocation type？哪種情況會出現其他種類？</p>
+</li>
+</ul>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%89%8D%E8%A8%80"><span class="top-box-text">前言</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#KASLR%E5%AF%A6%E4%BD%9C%E6%A9%9F%E5%88%B6"><span class="top-box-text">KASLR實作機制</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E5%9F%B7%E8%A1%8C%E7%92%B0%E5%A2%83%E8%AA%AA%E6%98%8E"><span class="top-box-text">執行環境說明</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#primary-switch"><span class="top-box-text">__primary_switch</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kaslr-early-init"><span class="top-box-text">kaslr_early_init</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#relocate-kernel"><span class="top-box-text">__relocate_kernel</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#primary-switch-%E6%9C%AB%E5%B0%BE"><span class="top-box-text">__primary_switch 末尾</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E9%8F%88%E6%8E%A5%E9%81%B8%E9%A0%85"><span class="top-box-text">鏈接選項</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E4%B8%80%E4%BA%9B%E7%96%91%E5%95%8F"><span class="top-box-text">一些疑問</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/gic_en/">
+          <h3 class="post-title">
+            Next: Notes on GIC - Hardware Handling of Virtual Interrupt Direct Injection
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

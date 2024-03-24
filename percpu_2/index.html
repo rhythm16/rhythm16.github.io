@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>KVM ARM: EL2 per cpu變數(2): 初始化</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="KVM ARM: EL2 per cpu變數(2): 初始化, blog keywords">
+<meta name="description" content="
+Linux版本：v6.0
+處理器架構：ARMv8
+KVM品種：NVHE
+
+前言上一篇說明了KVM ARM EL2 per cpu變數如何宣告與使用。簡單複習一下，EL2 per cpu變數的存取方式是先取得被放在.hyp.data..pe">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">KVM ARM: EL2 per cpu變數(2): 初始化</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-11-24</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KVM/">
+              KVM
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/per-cpu-variables/">
+              per cpu variables
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux版本：v6.0</p>
+<p>處理器架構：ARMv8</p>
+<p>KVM品種：NVHE</p>
+</blockquote>
+<h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>上一篇說明了KVM ARM EL2 per cpu變數如何宣告與使用。簡單複習一下，EL2 per cpu變數的存取方式是先取得被放在<code>.hyp.data..percpu</code> section的基地址，然後加上存放在<code>tpidr_el2</code> 的offset算出最終的位址。經過這樣的講解，有兩個自然的問題：</p>
+<ol>
+<li><p>EL2 per cpu變數使用的記憶體是如何分配的？</p>
+</li>
+<li><p>關鍵的<code>tpidr_el2</code> 裡頭存的offset是如何計算並存進去的？</p>
+</li>
+</ol>
+<p>這就是本篇要解答的內容，start!</p>
+<h2 id="記憶體分配"><a href="#記憶體分配" class="headerlink" title="記憶體分配"></a>記憶體分配</h2><p>KVM ARM初始化的重要函式<code>init_hyp_mode</code> 中會替EL2 per cpu變數分配記憶體：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * Allocate and initialize pages for Hypervisor-mode percpu regions.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="comment">// 對每一個可用的cpu:</span></span><br><span class="line">for_each_possible_cpu(cpu) &#123;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">page</span> *<span class="title">page</span>;</span></span><br><span class="line">        <span class="type">void</span> *page_addr;</span><br><span class="line">        <span class="comment">// 使用alloc_pages分配EL2 per cpu記憶體</span></span><br><span class="line">        <span class="comment">// nvhe_per_cpu_order()計算per cpu記憶體有多大，單位是幾個頁，</span></span><br><span class="line">        <span class="comment">// 然後取log2 e.g. 8頁 = 2^3頁，回傳3.</span></span><br><span class="line">        page = alloc_pages(GFP_KERNEL, nvhe_percpu_order());</span><br><span class="line">        <span class="keyword">if</span> (!page) &#123;</span><br><span class="line">                err = -ENOMEM;</span><br><span class="line">                <span class="keyword">goto</span> out_err;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 把alloc_pages回傳的struct page指標轉換成該頁之線性地址</span></span><br><span class="line">        page_addr = page_address(page);</span><br><span class="line">        <span class="comment">// 把.hyp.data..percpu裡原本的內容複製到剛分配出的記憶體，以免</span></span><br><span class="line">        <span class="comment">// 有已經初始化過的變數</span></span><br><span class="line">        <span class="comment">// CHOOSE_NVHE_SYM macro用於把符號名稱改為nvhe的命名空間</span></span><br><span class="line">        <span class="comment">// CHOOSE_NVHE_SYM(__per_cpu_start)可以先理解為.hyp.data..percpu的開頭</span></span><br><span class="line">        <span class="built_in">memcpy</span>(page_addr, CHOOSE_NVHE_SYM(__per_cpu_start), nvhe_percpu_size());</span><br><span class="line">        <span class="comment">// 把分配出的線性位址存進一個EL1的陣列</span></span><br><span class="line">        kvm_arm_hyp_percpu_base[cpu] = (<span class="type">unsigned</span> <span class="type">long</span>)page_addr;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>分配完記憶體之後就是要把那些空間map給EL2(一樣在<code>init_hyp_mode</code>)：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 對每一個可用的cpu:</span></span><br><span class="line">for_each_possible_cpu(cpu) &#123;</span><br><span class="line">        <span class="comment">// 取得當前cpu應該map給EL2的per cpu空間(EL1線性地址)</span></span><br><span class="line">        <span class="type">char</span> *percpu_begin = (<span class="type">char</span> *)kvm_arm_hyp_percpu_base[cpu];</span><br><span class="line">        <span class="type">char</span> *percpu_end = percpu_begin + nvhe_percpu_size();</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Map Hyp percpu pages */</span></span><br><span class="line">        <span class="comment">// 應該不用說明</span></span><br><span class="line">        err = create_hyp_mappings(percpu_begin, percpu_end, PAGE_HYP);</span><br><span class="line">        <span class="keyword">if</span> (err) &#123;</span><br><span class="line">                kvm_err(<span class="string">&quot;Cannot map hyp percpu region\n&quot;</span>);</span><br><span class="line">                <span class="keyword">goto</span> out_err;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Prepare the CPU initialization parameters */</span></span><br><span class="line">        <span class="comment">// 準備各個之後要在EL2安裝的系統暫存器的值(見下節)</span></span><br><span class="line">        cpu_prepare_hyp_mode(cpu);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="設定tpidr-el2"><a href="#設定tpidr-el2" class="headerlink" title="設定tpidr_el2"></a>設定tpidr_el2</h2><p>前面說明了如何分配EL2 per cpu變數使用的記憶體與替EL2建造page table的過程，接下來要做的就是計算各個cpu的offset還有實際安裝該值進<code>tpidr_el2</code> 。</p>
+<h3 id="計算per-cpu-offset"><a href="#計算per-cpu-offset" class="headerlink" title="計算per cpu offset"></a>計算per cpu offset</h3><p><code>cpu_prepare_hyp_mode(cpu)</code> 負責的工作在於填充一個<code>struct kvm_nvhe_init_params</code> ，這個結構存放初始化EL2各個系統暫存器的值，也就包含了<code>tpidr_el2</code> 該存的offset，列出目前關心的部份：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">cpu_prepare_hyp_mode</span><span class="params">(<span class="type">int</span> cpu)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="comment">// 使用per_cpu_ptr_nvhe_sym取得當前cpu EL2 per cpu變數在EL1的線性位址，</span></span><br><span class="line">        <span class="comment">// 這邊取得kvm_init_params這個per cpu變數</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_nvhe_init_params</span> *<span class="title">params</span> =</span> per_cpu_ptr_nvhe_sym(kvm_init_params, cpu);</span><br><span class="line">        </span><br><span class="line">        [...]</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * Calculate the raw per-cpu offset without a translation from the</span></span><br><span class="line"><span class="comment">         * kernel&#x27;s mapping to the linear mapping, and store it in tpidr_el2</span></span><br><span class="line"><span class="comment">         * so that we can use adr_l to access per-cpu variables in EL2.</span></span><br><span class="line"><span class="comment">         * Also drop the KASAN tag which gets in the way...</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// 這邊就是計算offset的地方了，</span></span><br><span class="line">        <span class="comment">// 被減數：使用alloc_pages分配出的per cpu區域的開頭的EL1線性位址</span></span><br><span class="line">        <span class="comment">// 減數：基per cpu區域的開頭的EL1線性位址</span></span><br><span class="line">        params-&gt;tpidr_el2 = (<span class="type">unsigned</span> <span class="type">long</span>)kasan_reset_tag(per_cpu_ptr_nvhe_sym(__per_cpu_start, cpu)) -</span><br><span class="line">                            (<span class="type">unsigned</span> <span class="type">long</span>)kvm_ksym_ref(CHOOSE_NVHE_SYM(__per_cpu_start));</span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="安裝tpidr-el2"><a href="#安裝tpidr-el2" class="headerlink" title="安裝tpidr_el2"></a>安裝<code>tpidr_el2</code></h3><p>把offset存進<code>params-&gt;tpidr_el2</code>之後，接著就是進入EL2並把該值存入<code>tpidr_el2</code>系統暫存器，先來看一下KVM ARM初始化過程中和目前主題有關的call stack:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">kvm_init()</span><br><span class="line">--&gt; kvm_arch_init()</span><br><span class="line">    --&gt; init_subsystems()</span><br><span class="line">        --&gt; on_each_cpu(_kvm_arch_hardware_enable())</span><br><span class="line">            --&gt; cpu_hyp_reinit()</span><br><span class="line">                --&gt; cpu_init_context()</span><br><span class="line">                    --&gt; cpu_init_hyp_mode()</span><br><span class="line">                        --&gt; hyp_install_host_vector()</span><br><span class="line">                            --&gt; ___kvm_hyp_init</span><br></pre></td></tr></table></figure>
+
+<p><code>hyp_install_host_vector</code> 跑在EL1，會呼叫hypercall 同時傳入EL2初始化需要用到的<code>struct kvm_nvhe_init_param</code> ，接著進入EL2並執行<code>___kvm_hyp_init</code>做EL2相關設定，其中就包含設定<code>tpidr_el2</code> 。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">hyp_install_host_vector</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_nvhe_init_params</span> *<span class="title">params</span>;</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">arm_smccc_res</span> <span class="title">res</span>;</span></span><br><span class="line"></span><br><span class="line">        [...]</span><br><span class="line">        <span class="comment">// 取得當前cpu的`kvm_init_params`的EL1位址</span></span><br><span class="line">        params = this_cpu_ptr_nvhe_sym(kvm_init_params);</span><br><span class="line">        <span class="comment">// 理解成呼叫`hvc`，傳入</span></span><br><span class="line">        <span class="comment">// 1. `__kvm_hyp_init`代表的數字，</span></span><br><span class="line">        <span class="comment">// 2. 當前cpu的`kvm_init_params`的物理位址</span></span><br><span class="line">        <span class="comment">// 3. 局部變數`res`的位址，用於回傳執行結果是否成功</span></span><br><span class="line">        arm_smccc_1_1_hvc(KVM_HOST_SMCCC_FUNC(__kvm_hyp_init), virt_to_phys(params), &amp;res);</span><br><span class="line">        WARN_ON(res.a0 != SMCCC_RET_SUCCESS);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>hvc那行如何進入EL2的細節先不討論，簡而言之<code>x0</code>會放入<code>__kvm_hyp_init</code>代表的數字(讓EL2的程式可以確認EL1為何呼叫<code>hvc</code> )，<code>x1</code> 會放入<code>kvm_init_params</code> 的物理位址，然後會跳到這邊：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// arch/arm64/kvm/hyp/nvhe/hyp-init.S</span></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * Only uses x0..x3 so as to not clobber callee-saved SMCCC registers.</span></span><br><span class="line"><span class="comment">         *</span></span><br><span class="line"><span class="comment">         * x0: SMCCC function ID</span></span><br><span class="line"><span class="comment">         * x1: struct kvm_nvhe_init_params PA</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">__do_hyp_init:</span><br><span class="line">        <span class="comment">/* Check for a stub HVC call */</span></span><br><span class="line">        <span class="comment">// 比較x0是否為stub hvc call的id (不是)</span></span><br><span class="line">        cmp     x0, #HVC_STUB_HCALL_NR</span><br><span class="line">        b.lo    __kvm_handle_stub_hvc</span><br><span class="line">        <span class="comment">// 比較x0是否為__kvm_hyp_init的ID (是)</span></span><br><span class="line">        mov     x3, #KVM_HOST_SMCCC_FUNC(__kvm_hyp_init)</span><br><span class="line">        cmp     x0, x3</span><br><span class="line">        <span class="comment">// 跳到1:</span></span><br><span class="line">        b.eq    <span class="number">1f</span></span><br><span class="line">    </span><br><span class="line">        mov     x0, #SMCCC_RET_NOT_SUPPORTED</span><br><span class="line">        eret</span><br><span class="line">        <span class="comment">// param的物理位址放到x0</span></span><br><span class="line"><span class="number">1</span>:      mov     x0, x1</span><br><span class="line">        <span class="comment">// 把存放return address的lr放到x3 以免被___kvm_hyp_init覆蓋掉</span></span><br><span class="line">        <span class="comment">// (___kvm_hyp_init)不會動到x3</span></span><br><span class="line">        mov     x3, lr</span><br><span class="line">        <span class="comment">// 跳去內部處理函式</span></span><br><span class="line">        bl      ___kvm_hyp_init   <span class="comment">// Clobbers x0..x2</span></span><br><span class="line">        <span class="comment">// 復原lr</span></span><br><span class="line">        mov     lr, x3</span><br><span class="line">    </span><br><span class="line">        <span class="comment">/* Hello, World! */</span></span><br><span class="line">        <span class="comment">// 把成功的值放進x0</span></span><br><span class="line">        mov     x0, #SMCCC_RET_SUCCESS</span><br><span class="line">        <span class="comment">// 回到EL1</span></span><br><span class="line">        eret</span><br></pre></td></tr></table></figure>
+
+<p>最後看一下<code>___kvm_hyp_init</code> :</p>
+<p>其實前兩行就是設定<code>tpidr_el2</code> 了，給你們揣摩它怎麼作到的吧，這裡也可以看到這個函式實際設定EL2執行環境的實作，至於講解細節的話…有空再說吧XD</p>
+<blockquote>
+<p>這裡值得說明的是這邊EL2的MMU還沒開，所以都是直接使用實體位址進行操作</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line">SYM_CODE_START_LOCAL(___kvm_hyp_init)</span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_TPIDR_EL2]</span><br><span class="line">        msr     tpidr_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_STACK_HYP_VA]</span><br><span class="line">        mov     sp, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_MAIR_EL2]</span><br><span class="line">        msr     mair_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_HCR_EL2]</span><br><span class="line">        msr     hcr_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_VTTBR]</span><br><span class="line">        msr     vttbr_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_VTCR]</span><br><span class="line">        msr     vtcr_el2, x1</span><br><span class="line"></span><br><span class="line">        ldr     x1, [x0, #NVHE_INIT_PGD_PA]</span><br><span class="line">        phys_to_ttbr x2, x1</span><br><span class="line">alternative_if ARM64_HAS_CNP</span><br><span class="line">        orr     x2, x2, #TTBR_CNP_BIT</span><br><span class="line">alternative_else_nop_endif</span><br><span class="line">        msr     ttbr0_el2, x2</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * Set the PS bits in TCR_EL2.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        ldr     x0, [x0, #NVHE_INIT_TCR_EL2]</span><br><span class="line">        tcr_compute_pa_size x0, #TCR_EL2_PS_SHIFT, x1, x2</span><br><span class="line">        msr     tcr_el2, x0</span><br><span class="line"></span><br><span class="line">        isb</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Invalidate the stale TLBs from Bootloader */</span></span><br><span class="line">        tlbi    alle2</span><br><span class="line">        tlbi    vmalls12e1</span><br><span class="line">        dsb     sy</span><br><span class="line"></span><br><span class="line">        mov_q   x0, INIT_SCTLR_EL2_MMU_ON</span><br><span class="line">alternative_if ARM64_HAS_ADDRESS_AUTH</span><br><span class="line">        mov_q   x1, (SCTLR_ELx_ENIA | SCTLR_ELx_ENIB | \</span><br><span class="line">                     SCTLR_ELx_ENDA | SCTLR_ELx_ENDB)</span><br><span class="line">        orr     x0, x0, x1</span><br><span class="line">alternative_else_nop_endif</span><br><span class="line">        msr     sctlr_el2, x0</span><br><span class="line">        isb</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Set the host vector */</span></span><br><span class="line">        ldr     x0, =__kvm_hyp_host_vector</span><br><span class="line">        msr     vbar_el2, x0</span><br><span class="line"></span><br><span class="line">        ret</span><br><span class="line">SYM_CODE_END(___kvm_hyp_init)</span><br></pre></td></tr></table></figure>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%89%8D%E8%A8%80"><span class="top-box-text">前言</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E8%A8%98%E6%86%B6%E9%AB%94%E5%88%86%E9%85%8D"><span class="top-box-text">記憶體分配</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E8%A8%AD%E5%AE%9Atpidr-el2"><span class="top-box-text">設定tpidr_el2</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E8%A8%88%E7%AE%97per-cpu-offset"><span class="top-box-text">計算per cpu offset</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E5%AE%89%E8%A3%9Dtpidr-el2"><span class="top-box-text">安裝tpidr_el2</span></a></li></ol></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/percpu_en/">
+          <h3 class="post-title">
+            Next: KVM ARM: EL2 per cpu variable(1): Definition &amp; Usage
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

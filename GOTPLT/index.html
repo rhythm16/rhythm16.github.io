@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Linux/ELF動態鏈結部分機制(GOT&amp;PLT)</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Linux/ELF動態鏈結部分機制(GOT&amp;PLT), blog keywords">
+<meta name="description" content="在讀作業系統、計算機結構等科目或是在學習程式的過程中，會讀到一個機制叫做「動態鏈結」(dynamic linking)，它可以使得多個程式共用函式，進而得到節省記憶體的效果。
+一個例子就是C語言&lt;stdio.h&gt;中的 print">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Linux/ELF動態鏈結部分機制(GOT&amp;PLT)</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2021-02-10</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/GOT-PLT/">
+              GOT/PLT
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ELF/">
+              ELF
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <p>在讀作業系統、計算機結構等科目或是在學習程式的過程中，會讀到一個機制叫做「動態鏈結」(dynamic linking)，它可以使得多個程式共用函式，進而得到節省記憶體的效果。</p>
+<p>一個例子就是C語言&lt;stdio.h&gt;中的 printf()，如果系統中所有要對終端機輸出字串的程式都把printf的程式碼包含進原始碼再編譯，不僅會浪費磁碟空間（儲存了一大堆printf），程式同時執行時主記憶體也就被很多個printf函式所佔用。</p>
+<p>所以說比較有效率的方式是讓系統的主記憶體只存著一份printf函式，其他所有程式要輸出字串時讓CPU跳到唯一存放printf的地方執行，結束再跳回原來的程式就行了。之所以叫做動態，就是因為程式編譯時，並不會知道所呼叫的函式在哪裡，無法在編譯時「鏈結」，只能在程式從硬碟載入記憶體時動態地在系統的幫助下完成鏈結。</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Linker_(computing)">鏈結(linking)</a>是指讓一隻程式在呼叫函式或使用外部變數時知道要往哪裡找</li>
+</ul>
+<p>這篇文章希望能夠為學過程式語言，但是對於程式究竟如何真正運作有好奇的人提供一部分更深入的內容，共分成三大段一小段：</p>
+<ol>
+<li>第一大段「Linux&#x2F;ELF動態鏈結流程概述」說明GOT和PLT是什麼，還有他們在系統動態鏈結中扮演什麼角色，以及解釋其中所使用到的名詞和先備知識。</li>
+<li>第二大段開始以組合語言的層級(instruction&#x2F;assembly level)分析一個簡單的hello world C程式的main函式部分。</li>
+<li>第三大段深入分析程式如何在GOT、PLT、動態鏈結器的幫助下實現動態鏈結。</li>
+<li>最後一小段提出一些在研究中引導出的一些雜談&#x2F;問題，可以思考看看(其實就是我也不懂的部分XD)</li>
+</ol>
+<h2 id="1-Linux-ELF動態鏈結流程概述"><a href="#1-Linux-ELF動態鏈結流程概述" class="headerlink" title="1. Linux&#x2F;ELF動態鏈結流程概述"></a>1. Linux&#x2F;ELF動態鏈結流程概述</h2><p>ELF檔案格式（當前Linux上的主流執行檔格式）儲存在硬碟中時，分成許多section，如下圖 <a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Executable_and_Linkable_Format">ELF格式wiki</a><br><img src="https://i.imgur.com/WoGNVvG.png" alt="ELF格式wiki"><br>其中幾個section在圖中有顯示，ELF header紀錄整個檔案的總體訊息，Program header table紀錄檔案從硬碟被載入主記憶體時的編排方式(會和存在硬碟中不大一樣)，Section header table紀錄各section訊息(如每個section名稱、長度、位置等等)，.text是程式碼，.rodata以及.data都是存資料用。<br>除了上述的幾個常見的section，要了解動態鏈結必須多知道幾個section，主要就是.got和.plt這兩個。</p>
+<h3 id="GOT-Global-Offset-Table"><a href="#GOT-Global-Offset-Table" class="headerlink" title="GOT (Global Offset Table)"></a>GOT (Global Offset Table)</h3><p>GOT存著很多個一樣大小的元素，形成一個table(基本上就是array)。每個元素都是一個指標(所以說32位元機器一個元素4個byte，64位元就是8個byte)，指向程式所需要的變數或者是函式，也有可能是系統需要的指標。</p>
+<h3 id="PLT-Procedure-Linkage-Table"><a href="#PLT-Procedure-Linkage-Table" class="headerlink" title="PLT (Procedure Linkage Table)"></a>PLT (Procedure Linkage Table)</h3><p>PLT存著很多個一樣大小的元素，形成一個table(基本上就是array)。每個元素都是一小段程式碼，第一個元素是公共plt，負責呼叫動態鏈結器。從第二個開始每個元素分別對應到一個動態鏈結的函式，會使用該函式所對應之GOT元素。</p>
+<blockquote>
+<p>意思就是一個動態鏈結函式對應到一個GOT元素(指標)，一個PLT元素(執行碼)。CPU執行PLT存的程式碼，使用GOT存的指標想辦法跳到該函式</p>
+</blockquote>
+<p>整個動態鏈結程序就是</p>
+<ol>
+<li>主程式第一次呼叫函式</li>
+<li>程式跳到該函式的plt元素</li>
+<li>該函式之plt使用其對應到的GOT元素，想要跳到目標函式</li>
+<li>(a)因為第一次呼叫，尚未鏈結，GOT指到的地方一樣是函式的plt，結果又跳回該plt元素，把代表該函式的數字推到stack上<br>(b)plt繼續執行，跳到公共plt</li>
+<li>公共plt執行一些東西</li>
+<li>公共plt呼叫動態鏈結器</li>
+<li>動態鏈結器從stack觀察主程式想使用哪個函式，更改第3步所使用的GOT元素的內容，使其指向函函式真正位置，並引導程式執行目的函式</li>
+<li>之後再次呼叫該函式時，第3步時plt使用的GOT已經存著函式的真正位址，就會直接跳到函式執行，這個動態鏈結的方式叫做Lazy Linking。</li>
+</ol>
+<p>下圖舉例鏈結一個叫foo的函式，數字n的位置就是第n步指令的所在之處，注意{系統用GOT}不是真的只有兩個，詳細情形會在第三大段說明<br><img src="https://i.imgur.com/sxo16t3.png"></p>
+<h2 id="2-hello-world-c-分析"><a href="#2-hello-world-c-分析" class="headerlink" title="2. hello world.c 分析"></a>2. hello world.c 分析</h2><blockquote>
+<p>系統實際的實作非常複雜，而且不同版本行為都可能略有改變甚至完全不同</p>
+</blockquote>
+<p>以下環境使用</p>
+<ul>
+<li>Linux 4.13.0-36-generic on x86_64</li>
+<li>Ubuntu 16.04.1</li>
+<li>gcc 5.4.0</li>
+</ul>
+<p>我們從一個最簡單，第一堂程式課會教的hello world程式開始：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">int main()</span><br><span class="line">&#123;</span><br><span class="line">    printf(&quot;hello world!\n&quot;);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>編譯，執行</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ cc hello.c #hello.c is the file name of the program above</span><br><span class="line">$ ./a.out</span><br><span class="line">hello world!</span><br><span class="line">$</span><br></pre></td></tr></table></figure>
+
+<p>接下來觀察gcc的輸出，使用objdump看main：<br>（程式中有很多其他輔助執行的函式，先略過他們，有些後面會提到）</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">$ objdump -d ./a.out</span><br><span class="line">...</span><br><span class="line">0000000000400526 &lt;main&gt;:</span><br><span class="line">  400526:	55                   	push   %rbp</span><br><span class="line">  400527:	48 89 e5             	mov    %rsp,%rbp</span><br><span class="line">  40052a:	bf c4 05 40 00       	mov    $0x4005c4,%edi</span><br><span class="line">  40052f:	e8 cc fe ff ff       	callq  400400 &lt;puts@plt&gt;</span><br><span class="line">  400534:	b8 00 00 00 00       	mov    $0x0,%eax</span><br><span class="line">  400539:	5d                   	pop    %rbp</span><br><span class="line">  40053a:	c3                   	retq   </span><br><span class="line">  40053b:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+
+<h3 id="上面在講什麼？"><a href="#上面在講什麼？" class="headerlink" title="上面在講什麼？"></a>上面在講什麼？</h3><p><code>0000000000400526 &lt;main&gt;</code>是指程式的main函式放在ELF檔離檔案開頭526（16進位）的位置開始，多的400000是gcc設定程式載入記憶體時main在400526的地方。<br>接著有8行組合語言，每行編排方式左至右分別為：</p>
+<ol>
+<li>位址，離檔案開始幾個byte+400000（如第一行的400526，這裡省略了前面的10個0）</li>
+<li>機器語言（如第一行<code>55</code>，也是16進位）</li>
+<li>機器語言所對應的組合語言（如第一行 <code>push %rbp</code>）</li>
+</ol>
+<p>兩個16進位字元就是一個byte，所以像第二行<code>48 89 e5</code>兩個一組隔開就是這個原因。<br>而組合語言的部分，第一個字是指令（<code>push</code>, <code>mov</code>等等），之後是使用的暫存器或所使用的資料，<br>‘%’ 代表暫存器，後面接暫存器的名字，如%rbp就是rbp暫存器。<br>‘$’ 指數字，如$0x0就是16進位0，就是0。<br>‘#’ 是objdump幫我們加的註解，幫助我們理解使用。<br>‘&lt;&gt;’ 告訴我們位址指到程式哪邊，可以見到gcc把printf最佳化成了puts</p>
+<blockquote>
+<p>r開頭的暫存器是64位元，40052a的edi是rdi暫存器的下半32bit部分，同樣400534的eax是rax暫存器的下半32bit部分</p>
+</blockquote>
+<p>如果只是要了解程式在做什麼的話，機器語言的部分是不需要看的，但接下來有部分會探討一些機器語言的編碼方式，因為挺有趣的</p>
+<h3 id="main函式流程"><a href="#main函式流程" class="headerlink" title="main函式流程"></a>main函式流程</h3><ul>
+<li><p>400526 &amp; 400527：建構<a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Call_stack#STACK-FRAME">stack frame</a>，先把指到stack base的rbp推到stack上(400526)，再把rsp 複製到rbp，設置好給main使用的stack。</p>
+</li>
+<li><p>40052a：這個指令幫我們準備參數，拿來餵給幫我們輸出的函式，在x86_64架構的Linux平台上函式的第一個參數是被放在rdi暫存器傳入的，不過需要的空間沒有那麼大，所以使用edi暫存器(rdi的下32bit部分)，所傳入的資料是一個指標，使用readelf看看傳入的4005c4指到哪裡：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">$ readelf -S ./a.out</span><br><span class="line">There are 31 section headers, starting at offset 0x19d8:</span><br><span class="line"></span><br><span class="line">Section Headers:</span><br><span class="line">  [Nr] Name              Type             Address           Offset</span><br><span class="line">       Size              EntSize          Flags  Link  Info  Align</span><br><span class="line">  [ 0]                   NULL             0000000000000000  00000000</span><br><span class="line">       0000000000000000  0000000000000000           0     0     0</span><br><span class="line">...</span><br><span class="line">  [16] .rodata           PROGBITS         00000000004005c0  000005c0</span><br><span class="line">       0000000000000011  0000000000000000   A       0     0     4</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+<p>執行<code>readelf -S</code> 可以看到執行檔裡頭的各個區段(section)的資訊，可以看到<code>.rodata</code>這個section的<code>Address</code>從4005c0開始，而<code>Size</code>是11(注意都是16進位)，也就是說<code>.rodata</code>包含了我們剛剛在關注的4005c4位址。<br><code>.rodata</code>是read only data的意思，現在使用<code>objdump -s</code>來看看<code>.rodata</code>放了什麼～</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">$ objdump -s ./a.out</span><br><span class="line"></span><br><span class="line">./a.out:     file format elf64-x86-64</span><br><span class="line"></span><br><span class="line">Contents of section .interp:</span><br><span class="line"> 400238 2f6c6962 36342f6c 642d6c69 6e75782d  /lib64/ld-linux-</span><br><span class="line"> 400248 7838362d 36342e73 6f2e3200           x86-64.so.2.    </span><br><span class="line"> ...</span><br><span class="line">Contents of section .rodata:</span><br><span class="line"> 4005c0 01000200 68656c6c 6f20776f 726c6421  ....hello world!</span><br><span class="line"> 4005d0 00                                   .               </span><br><span class="line"> ...</span><br></pre></td></tr></table></figure>
+<p>一樣關注<code>.rodata</code>部分就好，可以確認左邊是從4005c0開始，沒有錯。中間就是<code>.rodata</code>裡頭的詳細資料了，右邊則是<code>objdump</code>好心幫我們把可以轉換成ascii code的字元顯示出來的樣子，只有一個點代表數值無法顯示成ascii字元。<br>數一下4005c4在哪裡，原來就是<code>hello world!</code>的起始位置，終於揭曉了，上上面<br><code>mov    $0x4005c4,%edi</code>就是在把指到<code>hello world!</code>字串的指標放進暫存器edi裡面！</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">這樣子數：（空白也是一個byte, 對應到0x20）</span><br><span class="line"></span><br><span class="line">4005c4----------|</span><br><span class="line">4005c3-------|  |</span><br><span class="line">4005c2-----| |  |</span><br><span class="line">4005c1---| | |  |</span><br><span class="line">         | | |  |</span><br><span class="line">4005c0-01000200 68656c6c 6f20776f 726c6421  ....hello world!</span><br></pre></td></tr></table></figure>
+</li>
+<li><p>40052f: <code>callq</code>，跳轉至程式400400位置。</p>
+<blockquote>
+<p>這邊可以看一下機器語言<code>e8 cc fe ff ff</code>，前面<code>e8</code>對應到callq，後面則是一個參數，用來計算要跳去的位址，這個指令用的計算方式是使用現在<code>%rip</code>中的值加上參數，作為下一個<code>%rip</code>的數值，也就是要跳去的地方。<br>在x86_64架構中，<code>%rip</code>存放著下一個即將執行的指令位址(所謂的instruction pointer&#x2F;program counter)，所以說執行40052f時<code>%rip</code>存著的是400534。</p>
+</blockquote>
+</li>
+</ul>
+<blockquote>
+<p>注意參數的部分因為x86_64的機器為<a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Endianness">little-endian</a>，所以寫成<code>cc fe ff ff</code>，而不是<code>ff ff fe cc</code>，而且這個數就是<a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Two%27s_complement">2’s complement表示法</a>的負308(10進位)，負134(16進位)，而400534-134 &#x3D; 400400，果然！</p>
+</blockquote>
+<blockquote>
+<p>從這個的格式可以看出offset的範圍應該是4個byte能夠表示的範圍，也就是2^32^，使用<a target="_blank" rel="noopener" href="https://defuse.ca/online-x86-assembler.htm#disassembly2">線上x86_64 disassembler</a>測試了幾個數值之後發現offset在CPU中會自動被sign extend，以符合64位元的數值運算，而且offset有分正負，<br>所以至多可以表示%rip-2^31^ ~ %rip+(2^31^-1)。</p>
+</blockquote>
+<ul>
+<li>400534: <code>mov    $0x0,%eax</code> 這個mov把0放進%eax，eax在這用於函式回傳值，正在準備為main函式回傳0，可以對應到程式中的<code>return 0;</code>，雖然我們沒有寫，但gcc編譯器還是幫我們加上去了。</li>
+<li>400539: 把前面指令(400526)所推到stack上的rbp給pop回來</li>
+<li>40053a: 接著return回呼叫main的環境。</li>
+<li>40053b: 我們的main函式理論上40053a就返回了，不會執行到這裡，我觀察程式中其他可執行的區段發現很多在結束後都有類似這幾個nop指令，我推測是為了讓各區段結尾對齊至位址個位數為0，這部分我不確定，歡迎高手指點。</li>
+</ul>
+<h2 id="3-GOT、PLT、動態鏈結器之舞"><a href="#3-GOT、PLT、動態鏈結器之舞" class="headerlink" title="3. GOT、PLT、動態鏈結器之舞"></a>3. GOT、PLT、動態鏈結器之舞</h2><blockquote>
+<p>這一大段可以對照第一大段的流程概述，會比較好理解！</p>
+</blockquote>
+<p>看完main做了什麼，可以來看程式如何呼叫外部函式了，動態鏈結的開端是main中40052f位址的指令<code>callq 400400</code>，對應到前面流程的第1步。<br>同樣的使用<code>objdump -d</code>觀察400400究竟在做什麼：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">$ objdump -d ./a.out</span><br><span class="line"></span><br><span class="line">./a.out:     file format elf64-x86-64</span><br><span class="line">...</span><br><span class="line">Disassembly of section .plt:</span><br><span class="line"></span><br><span class="line">00000000004003f0 &lt;puts@plt-0x10&gt;:</span><br><span class="line">  4003f0:	ff 35 12 0c 20 00    	pushq  0x200c12(%rip)        # 601008 &lt;_GLOBAL_OFFSET_TABLE_+0x8&gt;</span><br><span class="line">  4003f6:	ff 25 14 0c 20 00    	jmpq   *0x200c14(%rip)        # 601010 &lt;_GLOBAL_OFFSET_TABLE_+0x10&gt;</span><br><span class="line">  4003fc:	0f 1f 40 00          	nopl   0x0(%rax)</span><br><span class="line"></span><br><span class="line">0000000000400400 &lt;puts@plt&gt;:</span><br><span class="line">  400400:	ff 25 12 0c 20 00    	jmpq   *0x200c12(%rip)        # 601018 &lt;_GLOBAL_OFFSET_TABLE_+0x18&gt;</span><br><span class="line">  400406:	68 00 00 00 00       	pushq  $0x0</span><br><span class="line">  40040b:	e9 e0 ff ff ff       	jmpq   4003f0 &lt;_init+0x28&gt;</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+<p>main一跳到400400又執行了另一個跳轉(jmpq)指令，跳到<code>*0x200c12(%rip)</code>這個地方。執行到400400時，<code>%rip</code>的內容是400406，而<code>*0x200c12(%rip)</code>這個表達式的意思是把<code>%rip</code>中的內容加上0x200c12作為指標，其所指到的記憶體內容。<br><code>%rip</code>現在是下一個指令的400406，400406 + 200c12 &#x3D; 601018</p>
+<blockquote>
+<p>第一次研究到這邊的時候一直搞不清楚，原來這裡是兩層間接</p>
+<ol>
+<li>使用計算出的601018是一個記憶體位址（指標），那個位址存放的資料是要放進<code>%rip</code>的，作為下一個指令的位址（還是一個指標）</li>
+<li>CPU再將新的<code>%rip</code>中的值(記憶體位址601018所存的資料)作為記憶體位址，去記憶體取得下一個指令執行。</li>
+</ol>
+</blockquote>
+<p>所以說下一個指令的位址是存在記憶體601018的地方，同樣使用<code>objdump -s</code>觀察：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">$ objdump -s ./a.out</span><br><span class="line"></span><br><span class="line">./a.out:     file format elf64-x86-64</span><br><span class="line">...</span><br><span class="line">Contents of section .got:</span><br><span class="line"> 600ff8 00000000 00000000                    ........        </span><br><span class="line">Contents of section .got.plt:</span><br><span class="line"> 601000 280e6000 00000000 00000000 00000000  (.`.............</span><br><span class="line"> 601010 00000000 00000000 06044000 00000000  ..........@.....</span><br><span class="line"> 601020 16044000 00000000                    ..@.....        </span><br><span class="line"> ...</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>之所以有.got和.got.plt是因為ELF檔案把GOT拆成變數用的部分(.got)以及函式用的部分(.got.plt)，這個例子中只注意.got.plt</p>
+</blockquote>
+<p> .got.plt就是第一大段所說的GOT，現在的狀態如下：<br> <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">0x601000 .got.plt[0] = 0x0000000000600e28</span><br><span class="line">0x601008 .got.plt[1] = 0x0000000000000000</span><br><span class="line">0x601010 .got.plt[2] = 0x0000000000000000</span><br><span class="line">0x601018 .got.plt[3] = 0x0000000000400406</span><br></pre></td></tr></table></figure></p>
+<p> 兩個character一個byte，所以601018在0604開始的地方。<code>%rip</code>是64-bit，也就是8個byte，0604開始的8個byte會被放入<code>%rip</code>，作為下一個指令的位址，<code>06044000 00000000</code>，但真的放進去時會變成<code>00000000 00400406</code>，因為little-endian!</p>
+<p>從400400搞了那麼多，結果竟然是跳到400400的下個地方400406(這裡對應流程的第2,3步)。</p>
+<p>400406：這個指令簡單，把0推到stack上(第4a步)。這個0代表第一個動態鏈結函式，鏈結器才知道是我們要的puts。</p>
+<p>40040b: 接著跳到4003f0(第4b步)，公共.plt部分。(這邊可以算算如何得到4003f0的！)</p>
+<p>4003f0: 把<code>0x200c12(%rip)</code>推到stack上，計算方式與之前相同，可以直接看<code>objdump</code>告訴我們的，是601008，程式的global offset table+8，GOT的第二個元素。</p>
+<p>4003f6: 再次跳轉(第6步)，到601010，程式的global offset table+10(這個10也是16進位)，GOT的第三個元素。</p>
+<p>到了這裡其實已經沒辦法再靜態分析下去了，因為第一大段明明說第6步該呼叫動態鏈結器了，而如果看上面.got.plt的內容會發現執行檔601008和601010都只是一大堆0，鏈結器應該不在位址0的地方吧？</p>
+<p>解答是.got.plt的前三個元素是有特殊意義的，系統在載入程式的時候，會主動把GOT第二和第三個元素應該要有的資料放進去，而因為那些資料一定要等程式載入記憶體準備執行了才會知道，所以編譯器先在那些地方都填入0。</p>
+<p>參考這張圖，原擷取自<a target="_blank" rel="noopener" href="https://csapp.cs.cmu.edu/">CSAPP</a>，但我在<a target="_blank" rel="noopener" href="https://www.freebuf.com/articles/system/135685.html">這裡</a>看到的<br><img src="https://i.imgur.com/4ukPcxp.png"><br>GOT[1] (我們例子的601008)是鏈結器需要的資料，而GOT[2] (我們例子的601010)就是動態鏈結器所在的位址！</p>
+<p>接下來我們使用gdb來看看程式執行時GOT是不是真的被改變了！</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">$ gdb ./a.out</span><br><span class="line">GNU gdb (Ubuntu 7.11.1-0ubuntu1~16.5) 7.11.1</span><br><span class="line">...</span><br><span class="line">(gdb) b main</span><br><span class="line">Breakpoint 1 at 0x40052a</span><br><span class="line">(gdb)</span><br></pre></td></tr></table></figure>
+<p>第一個指令輸入<code>b main</code>在main設下斷點，可以觀察gdb特別跳過前兩個設定stack frame的指令，把斷點設在40052a<br>接著執行程式，讓它停在斷點：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">(gdb) r</span><br><span class="line">Starting program: /home/rhythm/a.out </span><br><span class="line"></span><br><span class="line">Breakpoint 1, 0x000000000040052a in main ()</span><br><span class="line">(gdb) </span><br></pre></td></tr></table></figure>
+<p>這時候程式已經開始了，來看看GOT的內容：</p>
+<blockquote>
+<p>如果你的GOT[1],GOT[2]並沒有改變，請看結尾的第一個部分</p>
+</blockquote>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">(gdb) x/8xw 0x601000</span><br><span class="line">0x601000:	0x00600e28	0x00000000	0xf7ffe168	0x00007fff</span><br><span class="line">0x601010:	0xf7dee870	0x00007fff	0x00400406	0x00000000</span><br></pre></td></tr></table></figure>
+<p>指令x是examine，檢視，斜線後面分別指定檢視幾個單位、輸出格式和單位，8xw就是8單位，16進位，word為單位(4個byte)</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">x / 8 x w</span><br><span class="line">|   | | |</span><br><span class="line">|   | | ⎣_以word(4bytes)為一個單位</span><br><span class="line">|   | |</span><br><span class="line">|   | |</span><br><span class="line">|   | ⎣_x代表用16進位顯示</span><br><span class="line">|   |</span><br><span class="line">|   顯示8個單位</span><br><span class="line">|</span><br><span class="line">examine(檢視)</span><br></pre></td></tr></table></figure>
+<p>解讀一下輸出（x&#x2F;8xw的4個byte裡頭的endianness幫我們調整好了，但是4個bytes之間沒有）</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">0x601000 .got.plt[0] = 0x0000000000600e28</span><br><span class="line">0x601008 .got.plt[1] = 0x00007ffff7ffe168</span><br><span class="line">0x601010 .got.plt[2] = 0x00007ffff7dee870</span><br><span class="line">0x601018 .got.plt[3] = 0x0000000000400406</span><br></pre></td></tr></table></figure>
+<p>.got.plt第二項和第三項真的被改變了，看看公共plt要跳到的601010是哪裡吧：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">(gdb) disassemble 0x00007ffff7dee870</span><br><span class="line">Dump of assembler code for function _dl_runtime_resolve_avx:</span><br><span class="line">   0x00007ffff7dee870 &lt;+0&gt;:	push   %rbx</span><br><span class="line">   0x00007ffff7dee871 &lt;+1&gt;:	mov    %rsp,%rbx</span><br><span class="line">   0x00007ffff7dee874 &lt;+4&gt;:	and    $0xffffffffffffffe0,%rsp</span><br><span class="line">   0x00007ffff7dee878 &lt;+8&gt;:	sub    $0x180,%rsp</span><br><span class="line">   0x00007ffff7dee87f &lt;+15&gt;:	mov    %rax,0x140(%rsp)</span><br><span class="line">...</span><br><span class="line">   0x00007ffff7dee9ab &lt;+315&gt;:	vmovdqa 0xc0(%rsp),%ymm6</span><br><span class="line">   0x00007ffff7dee9b4 &lt;+324&gt;:	vmovdqa 0xe0(%rsp),%ymm7</span><br><span class="line">---Type &lt;return&gt; to continue, or q &lt;return&gt; to quit---</span><br></pre></td></tr></table></figure>
+<p>持續按enter可以繼續顯示更多，從第一行結果可以看到第6步真的跳進動態鏈結器的函式<code>_dl_runtime_resolve_avx</code>了！<br>至於動態鏈結器如何完成工作就不說明了，因為我也不知道。不過來看一下第3步使用的GOT元素有沒有成功地被鏈結器改成我們想要的函式位址</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">(gdb) b *main+0xe     #在callq結束的地方設置斷點(鏈結器已完成工作)</span><br><span class="line">Breakpoint 2 at 0x400534</span><br><span class="line">(gdb) c               #c是continue，繼續執行</span><br><span class="line">Continuing.</span><br><span class="line">hello world!          #字串被印出</span><br><span class="line"></span><br><span class="line">Breakpoint 2, 0x0000000000400534 in main ()</span><br><span class="line">(gdb) x/8xw 0x601000  #再看一次.got.plt內容</span><br><span class="line">0x601000:	0x00600e28	0x00000000	0xf7ffe168	0x00007fff</span><br><span class="line">0x601010:	0xf7dee870	0x00007fff	0xf7a7c690	0x00007fff</span><br></pre></td></tr></table></figure>
+<p>第四個元素從原本的<code>0x00400406 0x00000000</code>被鏈結器改成<code>0xf7a7c690 0x00007fff</code>，看一下變成哪個地方了：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">(gdb) disassemble 0x00007ffff7a7c690</span><br><span class="line">Dump of assembler code for function _IO_puts:</span><br><span class="line">   0x00007ffff7a7c690 &lt;+0&gt;:	push   %r12</span><br><span class="line">   0x00007ffff7a7c692 &lt;+2&gt;:	push   %rbp</span><br><span class="line">   0x00007ffff7a7c693 &lt;+3&gt;:	mov    %rdi,%r12</span><br><span class="line">   0x00007ffff7a7c696 &lt;+6&gt;:	push   %rbx</span><br><span class="line">   0x00007ffff7a7c697 &lt;+7&gt;:	callq  0x7ffff7a98720 &lt;strlen&gt;</span><br><span class="line">...</span><br><span class="line">   0x00007ffff7a7c74c &lt;+188&gt;:	jae    0x7ffff7a7c7f0 &lt;_IO_puts+352&gt;</span><br><span class="line">   0x00007ffff7a7c752 &lt;+194&gt;:	lea    0x1(%rax),%rdx</span><br><span class="line">---Type &lt;return&gt; to continue, or q &lt;return&gt; to quit---</span><br></pre></td></tr></table></figure>
+<p>終於！我們要的puts函式的指標被存入.got.plt了(第7步)，這下子下一次呼叫printf時，從main進到puts的plt就可以直接跳到函式了！</p>
+<h2 id="4-結尾"><a href="#4-結尾" class="headerlink" title="4. 結尾"></a>4. 結尾</h2><p>其實我在做這篇文章中的小實驗的時候並不是很順利，我一開始想說用筆電原<br>生Linux 5.3 Ubuntu 18.4，測試過程發現程式開始時GOT[1],GOT[2]的內容並沒有在程式載入被填上鏈結器需要的資料和鏈結器的函式位址，反而GOT[3]，也就是動態鏈結器要負責改成我們所需函式的位置，在載入時就已經是我們要的函式位址了，我真的不知道是什麼神秘機制（求高手指點），而且不知道是不是因為<a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Address_space_layout_randomization">ASLR</a>，執行時整個程式的offset也跟存在ELF中的不一樣。<br>後來換使用amazon ec2的Linux 4.15 Ubuntu 18.04原本可以，寫到一半不知道是不是遇到系統更新，突然變成像上面那樣直接在載入時就GOT就鏈結好了，最後在windows上開了個相對舊版的Linux&#x2F;Ubuntu才得到這篇文章中的行為。<br>後來我又試了另一台Linux 5.5 Arch Linux，是預期中的行為，所以也不知道是不是linux版本所造成的差異。</p>
+<p>還有，原本文章主題是「Linux動態鏈結機制」，後來想想才意識到只講GOT&#x2F;PLT，鏈結器如何運作都不會，標題還這樣下絕對是貽笑大方，才改成現在的標題XD</p>
+<h3 id="主要參考資料"><a href="#主要參考資料" class="headerlink" title="主要參考資料"></a>主要參考資料</h3><p>這篇文章絕大部分的內容都來自下面三個連結，他們對於GOT&#x2F;PLT機制的說明都更加詳細，也說得更好，但更重要的是他們都有講到一件這篇沒有的內容，就是為什麼要有GOT&#x2F;PLT這樣的設計。這裡只有機械式的帶過流程，目的是希望讓一個對這方面不熟但有興趣的人能更無痛理解這個小主題，還有實際地呈現系統運作的奧妙！</p>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://luomuxiaoxiao.com/?p=578">计算机原理系列之八 ——– 可执行文件的PLT和GOT</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.freebuf.com/articles/system/135685.html">Linux中的GOT和PLT到底是个啥？</a></li>
+<li><a target="_blank" rel="noopener" href="https://www.technovelty.org/linux/plt-and-got-the-key-to-code-sharing-and-dynamic-libraries.html">PLT and GOT - the key to code sharing and dynamic libraries</a></li>
+</ul>
+<h3 id="其他參考資料"><a href="#其他參考資料" class="headerlink" title="其他參考資料"></a>其他參考資料</h3><ul>
+<li><a target="_blank" rel="noopener" href="http://dbp-consulting.com/tutorials/debugging/linuxProgramStartup.html">Linux x86 Program Start Up</a>，我們分析是直接從main函式開始，這篇就講Linux的運行跑到main之前到底要做哪些事(很多！)</li>
+<li><a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Virtual_memory">virtual memory</a>，這篇文章不會用到，但我怕有人以為ELF檔的位址就是實際的位址所以還是在這裡提一下有這個東西</li>
+</ul>
+<h3 id="一些問題-小討論"><a href="#一些問題-小討論" class="headerlink" title="一些問題&#x2F;小討論"></a>一些問題&#x2F;小討論</h3><ul>
+<li>為什麼.rodata區段前面有四個bytes<code>01000200</code>?<br><a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/34733136/why-static-string-in-rodata-section-has-a-four-dots-prefix-in-gcc">Why static string in .rodata section has a four dots prefix in GCC?</a></li>
+<li>gcc在什麼情況下會把printf()換成puts()，如果原始程式有簡單printf() (可用puts代替的)，以及會使用到printf中puts沒有的功能的話，編譯器還是會把簡單的printf()換成puts()嗎，還是全部使用printf()?</li>
+<li>動態鏈結器如何完成它的工作？<br>這個問題應該就非常複雜了，會牽扯到整個OS的運作，鏈結器至少要知道有哪些函式庫在記憶體中，還有當前實體記憶體配置狀態等與系統運作密切相關的內容</li>
+<li>前面有一個部分在講解程式有個方法可以跳%rip-2^31^ ~ %rip+(2^31^-1)，如果程式超大要跳超過這個範圍會如何反應？</li>
+<li>為什麼有個0x400000的offset?<br>與linker script有關，<a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/14314021/why-linux-gnu-linker-chose-address-0x400000">Why Linux&#x2F;gnu linker chose address 0x400000?</a></li>
+</ul>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#1-Linux-ELF%E5%8B%95%E6%85%8B%E9%8F%88%E7%B5%90%E6%B5%81%E7%A8%8B%E6%A6%82%E8%BF%B0"><span class="top-box-text">1. Linux&#x2F;ELF動態鏈結流程概述</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#GOT-Global-Offset-Table"><span class="top-box-text">GOT (Global Offset Table)</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#PLT-Procedure-Linkage-Table"><span class="top-box-text">PLT (Procedure Linkage Table)</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#2-hello-world-c-%E5%88%86%E6%9E%90"><span class="top-box-text">2. hello world.c 分析</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E4%B8%8A%E9%9D%A2%E5%9C%A8%E8%AC%9B%E4%BB%80%E9%BA%BC%EF%BC%9F"><span class="top-box-text">上面在講什麼？</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#main%E5%87%BD%E5%BC%8F%E6%B5%81%E7%A8%8B"><span class="top-box-text">main函式流程</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#3-GOT%E3%80%81PLT%E3%80%81%E5%8B%95%E6%85%8B%E9%8F%88%E7%B5%90%E5%99%A8%E4%B9%8B%E8%88%9E"><span class="top-box-text">3. GOT、PLT、動態鏈結器之舞</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#4-%E7%B5%90%E5%B0%BE"><span class="top-box-text">4. 結尾</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E4%B8%BB%E8%A6%81%E5%8F%83%E8%80%83%E8%B3%87%E6%96%99"><span class="top-box-text">主要參考資料</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E5%85%B6%E4%BB%96%E5%8F%83%E8%80%83%E8%B3%87%E6%96%99"><span class="top-box-text">其他參考資料</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#%E4%B8%80%E4%BA%9B%E5%95%8F%E9%A1%8C-%E5%B0%8F%E8%A8%8E%E8%AB%96"><span class="top-box-text">一些問題&#x2F;小討論</span></a></li></ol></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/linux0.12/">
+          <h3 class="post-title">
+            Next: ⟪Linux 0.12 內核完全註釋v5.0⟫ 閱讀心得
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

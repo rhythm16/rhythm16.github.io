@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Linux ARM64 KASLR Implementation(1): Kernel Image Randomization</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Linux ARM64 KASLR Implementation(1): Kernel Image Randomization, blog keywords">
+<meta name="description" content="
+Linux version: v6.0
+Architecture: ARMv8
+
+IntroductionI have heard of KASLR (Kernel Address Space Layout Randomization) ">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Linux ARM64 KASLR Implementation(1): Kernel Image Randomization</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2023-01-02</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KASLR/">
+              KASLR
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux version: v6.0</p>
+<p>Architecture: ARMv8</p>
+</blockquote>
+<h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><p>I have heard of KASLR (Kernel Address Space Layout Randomization) for a long time now, and had always find it interesting. However because KASLR isn’t really a core operating system concept, I never got the chance to research it other than reading some random articles online that only discusses the topic conceptually. The deep knowledge of how it actually works had always been missing.</p>
+<p>I recently got some time to deeply investigate this cool feature of Linux, I will split what I found in two blogs, first explaining the implementation of the kernel image randomization, the second explaining the randomization of the linear mapping.</p>
+<blockquote>
+<p>It is advised to learn about the boot flow of the Linux ARM64 kernel before proceeding.</p>
+</blockquote>
+<h2 id="KASLR-Implementation"><a href="#KASLR-Implementation" class="headerlink" title="KASLR Implementation"></a>KASLR Implementation</h2><p>KASLR is closely related to Linux ARM64’s boot sequence, the execution context will be breifly presented, then the code explanation will start from the early function <code>__primary_switch</code> .</p>
+<h3 id="Execution-Context"><a href="#Execution-Context" class="headerlink" title="Execution Context"></a>Execution Context</h3><p>The boot (primary) CPU runs to the <code>__primary_switch</code> with the MMU not yet enabled, with CPU system registers initialized, identity map page tables initialized. Also with <code>x22</code> storing the physical address of the FDT (Flat Device Tree).</p>
+<h3 id="primary-switch"><a href="#primary-switch" class="headerlink" title="__primary_switch"></a><code>__primary_switch</code></h3><p><code>__primary_switch</code> means “primary CPU switch on MMU”</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line">SYM_FUNC_START_LOCAL(__primary_switch)</span><br><span class="line">        adrp    x1, reserved_pg_dir</span><br><span class="line">        adrp    x2, init_idmap_pg_dir</span><br><span class="line">        <span class="comment">// turn on the MMU, use the identity map in init_idmap_pg_dir</span></span><br><span class="line">        bl      __enable_mmu</span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> CONFIG_RELOCATABLE</span></span><br><span class="line">        <span class="comment">// x23 = physical address of the kernel image</span></span><br><span class="line">        adrp    x23, KERNEL_START</span><br><span class="line">        <span class="comment">// x23 = x23 % 2MB, most likely == 0 since the kernel is mandated to</span></span><br><span class="line">        <span class="comment">// be loaded with 2MB alignment</span></span><br><span class="line">        and     x23, x23, MIN_KIMG_ALIGN - <span class="number">1</span></span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> CONFIG_RANDOMIZE_BASE</span></span><br><span class="line">        <span class="comment">// x0 = FDT address, this is the argument for __pi_kaslr_early_init</span></span><br><span class="line">        mov     x0, x22</span><br><span class="line">        <span class="comment">// use init_pg_end as the temporary stack</span></span><br><span class="line">        adrp    x1, init_pg_end</span><br><span class="line">        mov     sp, x1</span><br><span class="line">        <span class="comment">// not sure, probably only just for the sake of clearing x29</span></span><br><span class="line">        mov     x29, xzr</span><br><span class="line">        <span class="comment">// see explanation below, x0 = KASLR random offset upon return</span></span><br><span class="line">        bl      __pi_kaslr_early_init</span><br><span class="line">        <span class="comment">// x24 = x0 % 2MB</span></span><br><span class="line">        and     x24, x0, #SZ_2M - <span class="number">1</span>             <span class="comment">// capture memstart offset seed</span></span><br><span class="line">        <span class="comment">// x0 = x0 round down to 2MB</span></span><br><span class="line">        bic     x0, x0, #SZ_2M - <span class="number">1</span></span><br><span class="line">        <span class="comment">// x23 = x23 + x0 = 0 + random offset</span></span><br><span class="line">        orr     x23, x23, x0                    <span class="comment">// record kernel offset</span></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">        <span class="comment">// not important to KASLR</span></span><br><span class="line">        bl      clear_page_tables</span><br><span class="line">        <span class="comment">// this creates the high address mapping for the kernel</span></span><br><span class="line">        <span class="comment">// the important part is it uses KIMAGE_VADDR + x23 to map it,</span></span><br><span class="line">        <span class="comment">// therefore the mapping it creates is randomized using the random offset</span></span><br><span class="line">        bl      create_kernel_mapping</span><br><span class="line"></span><br><span class="line">        adrp    x1, init_pg_dir</span><br><span class="line">        <span class="comment">// use init_pg_dir for the high address</span></span><br><span class="line">        load_ttbr1 x1, x1, x2</span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> CONFIG_RELOCATABLE</span></span><br><span class="line">        <span class="comment">// see explanation below</span></span><br><span class="line">        bl      __relocate_kernel</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">        <span class="comment">// see explanation below (end of __primary_switch)</span></span><br><span class="line">        ldr     x8, =__primary_switched</span><br><span class="line">        adrp    x0, KERNEL_START                <span class="comment">// __pa(KERNEL_START)</span></span><br><span class="line">        br      x8</span><br><span class="line">SYM_FUNC_END(__primary_switch)</span><br></pre></td></tr></table></figure>
+
+<h3 id="kaslr-early-init"><a href="#kaslr-early-init" class="headerlink" title="kaslr_early_init"></a><code>kaslr_early_init</code></h3><p>The Makefile which <code>arch/arm64/kernel/pi/kaslr_early.c</code> uses, which <code>kaslr_early_init</code> resides in, prepends all symbols with <code>__pi_</code> , therefore the <code>bl __pi_kaslr_early_init</code> call gets directed here.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line">asmlinkage u64 <span class="title function_">kaslr_early_init</span><span class="params">(<span class="type">void</span> *fdt)</span></span><br><span class="line">&#123;</span><br><span class="line">        u64 seed;</span><br><span class="line">        <span class="comment">// return if KASLR is disabled in the command line</span></span><br><span class="line">        <span class="keyword">if</span> (is_kaslr_disabled_cmdline(fdt))</span><br><span class="line">                <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        <span class="comment">// get KASLR seed from FDT</span></span><br><span class="line">        seed = get_kaslr_seed(fdt);</span><br><span class="line">        <span class="comment">// if we don&#x27;t get the seed from FDT</span></span><br><span class="line">        <span class="keyword">if</span> (!seed) &#123;</span><br><span class="line">                <span class="comment">// return if the CPU does not have the ability to generate</span></span><br><span class="line">                <span class="comment">// a random seed or the operation failed</span></span><br><span class="line">                <span class="keyword">if</span> (!__early_cpu_has_rndr() ||</span><br><span class="line">                    !__arm64_rndr((<span class="type">unsigned</span> <span class="type">long</span> *)&amp;seed))</span><br><span class="line">                        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * OK, so we are proceeding with KASLR enabled. Calculate a suitable</span></span><br><span class="line"><span class="comment">         * kernel image offset from the seed. Let&#x27;s place the kernel in the</span></span><br><span class="line"><span class="comment">         * middle half of the VMALLOC area (VA_BITS_MIN - 2), and stay clear of</span></span><br><span class="line"><span class="comment">         * the lower and upper quarters to avoid colliding with other</span></span><br><span class="line"><span class="comment">         * allocations.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// use the random seed to generate a suitable KASLR offset and return</span></span><br><span class="line">        <span class="keyword">return</span> BIT(VA_BITS_MIN - <span class="number">3</span>) + (seed &amp; GENMASK(VA_BITS_MIN - <span class="number">3</span>, <span class="number">0</span>));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="relocate-kernel"><a href="#relocate-kernel" class="headerlink" title="__relocate_kernel"></a><code>__relocate_kernel</code></h3><p>In the code explanation below, I removed the part in the <code>CONFIG_RELR</code> option, because I decided to skip that part and also <code>defconfig</code> does not use it.</p>
+<p>This is the critical function for KASLR, it relocates the kernel at runtime. The kernel build process produces a relocation entry for each global symbol access, by including the entries in the kernel image, it allows the kernel to read the entries and relocate itself at runtime.</p>
+<blockquote>
+<p><a target="_blank" rel="noopener" href="https://github.com/ARM-software/abi-aa/blob/main/aaelf64/aaelf64.rst">This reference</a> contains information about ARM relocation entry types, only one type is used here.</p>
+</blockquote>
+<p>The format of ELF relocation entry looks like:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">        <span class="comment">// compile time address of the place to be relocated</span></span><br><span class="line">        Elf64_Addr      r_offset;</span><br><span class="line">        <span class="comment">// symbol table index and relocation type</span></span><br><span class="line">        Elf64_Xword     r_info;</span><br><span class="line">        <span class="comment">// the addend used in the relocation, meaning depends on the type</span></span><br><span class="line">        Elf64_Sxword    r_addend;</span><br><span class="line">&#125; Elf64_Rela;</span><br></pre></td></tr></table></figure>
+
+<p>KASLR only processes one type of relocation that is <code>R_AARCH64_RELATIVE</code> , it requires writing “<code>r_addend + random offset (address difference between run time and compile time)</code> “ to the address corresponding to <code>r_offset</code> at run time. For example assume there’s an instruction trying to load symbol <code>sym</code> ‘s address into register <code>x0</code> , the compiler emits <code>ldr x0, #a0</code> , <code>#a0</code> here is just for demoing purpose. Assume <code>sym</code> ‘s compile time address is <code>0x500</code> , the instruction’s compile time address is <code>0x1000</code> , the relocation generated would be: <code>r_offset = 0x10a0</code> , <code>r_addend = 0x500</code> . Further assume the instruction’s run time address is <code>0x3000</code> , (so <code>sym</code> ‘s run time address is <code>0x2500</code> ), the random offset is <code>0x2000</code> . What we need to do to relocate is read <code>r_addend (0x500)</code> , add it with <code>0x2000</code> (the offset), then save the result into <code>r_offset</code> + (the offset), that is writing <code>0x2500</code> into <code>0x10a0 + 0x2000 = 0x30a0</code> . Now when the instruciton is run <code>x0</code> would be assigned <code>0x2500</code> , which is the correct run time address of <code>sym</code> .</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line">SYM_FUNC_START_LOCAL(__relocate_kernel)</span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * Iterate over each entry in the relocation table, and apply the</span></span><br><span class="line"><span class="comment">         * relocations in place.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="comment">// x9 = physical address of the first relocation entry</span></span><br><span class="line">        adr_l   x9, __rela_start</span><br><span class="line">        <span class="comment">// x10 = address just past the last entry</span></span><br><span class="line">        adr_l   x10, __rela_end</span><br><span class="line">        <span class="comment">// x11 = default kernel virtual address</span></span><br><span class="line">        mov_q   x11, KIMAGE_VADDR               <span class="comment">// default virtual offset</span></span><br><span class="line">        <span class="comment">// x11 += random offset, creates the random virtual address</span></span><br><span class="line">        add     x11, x11, x23                   <span class="comment">// actual virtual offset</span></span><br><span class="line">        <span class="comment">// return if x9 &gt;= x10</span></span><br><span class="line"><span class="number">0</span>:      cmp     x9, x10</span><br><span class="line">        b.hs    <span class="number">1f</span></span><br><span class="line">        <span class="comment">// x12 = r_offset, x13 = r_info and move x9 to the next entry</span></span><br><span class="line">        ldp     x12, x13, [x9], #<span class="number">24</span></span><br><span class="line">        <span class="comment">// x14 = r_addend</span></span><br><span class="line">        ldr     x14, [x9, #<span class="number">-8</span>]</span><br><span class="line">        <span class="comment">// is r_info R_AARCH64_RELATIVE ?</span></span><br><span class="line">        cmp     w13, #R_AARCH64_RELATIVE</span><br><span class="line">        <span class="comment">// process the next entry if not R_AARCH64_RELATIVE</span></span><br><span class="line">        b.ne    <span class="number">0b</span></span><br><span class="line">        <span class="comment">// x14 = r_addend + random offset</span></span><br><span class="line">        add     x14, x14, x23                   <span class="comment">// relocate</span></span><br><span class="line">        <span class="comment">// write (r_addend + random offset) into (r_offset + random offset)</span></span><br><span class="line">        <span class="comment">// to relocate</span></span><br><span class="line">        str     x14, [x12, x23]</span><br><span class="line">        b       <span class="number">0b</span></span><br><span class="line"><span class="number">1</span>:</span><br><span class="line">        ret</span><br><span class="line"><span class="title function_">SYM_FUNC_END</span><span class="params">(__relocate_kernel)</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="Ending-of-primary-switch"><a href="#Ending-of-primary-switch" class="headerlink" title="Ending of __primary_switch"></a>Ending of <code>__primary_switch</code></h3><p>A global address load happens <strong>right</strong> after <code>__relocation kernel</code> returns:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// this load instruction generates a relocation entry which is relocated</span></span><br><span class="line"><span class="comment">// in __relocate_kernel, x8 gets the run time address of __primary_switched,</span></span><br><span class="line"><span class="comment">// which has had the random offset added at this point,</span></span><br><span class="line"><span class="comment">// create_kernel_mapping created the mapping with the random offset added,</span></span><br><span class="line"><span class="comment">// and the page table was installed at load_ttbr1 x1, x1, x2,</span></span><br><span class="line"><span class="comment">// everything is setup at this point, the br instruction jumps to high</span></span><br><span class="line"><span class="comment">// address for the kernel to continue to run</span></span><br><span class="line">ldr     x8, =__primary_switched</span><br><span class="line">adrp    x0, KERNEL_START                <span class="comment">// __pa(KERNEL_START)</span></span><br><span class="line">br      x8</span><br></pre></td></tr></table></figure>
+
+<h2 id="Linker-Options"><a href="#Linker-Options" class="headerlink" title="Linker Options"></a>Linker Options</h2><p>The ARM64 Makefile contains linker options for KASLR:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">ifeq ($(CONFIG_RELOCATABLE), y)</span><br><span class="line"># Pass --no-apply-dynamic-relocs to restore pre-binutils<span class="number">-2.27</span> behaviour</span><br><span class="line"><span class="meta"># for relative relocs, since this leads to better Image compression</span></span><br><span class="line"><span class="meta"># with the relocation offsets always being zero.</span></span><br><span class="line">LDFLAGS_vmlinux         += -shared -Bsymbolic -z notext \</span><br><span class="line">                        $(call ld-option, --no-apply-dynamic-relocs)</span><br><span class="line">endif</span><br></pre></td></tr></table></figure>
+
+<p>Four options are used:</p>
+<ul>
+<li><p><code>—no-apply-dynamic-relcos</code> seems to be related to the skipped <code>CONFIG_RELR</code> , but I’m not sure</p>
+</li>
+<li><p><code>-shared</code> means to create a shared library</p>
+</li>
+<li><p><code>-Bsymbolic</code> means to bind references to global symbols to the definition within the shared library, if any. I think this prevents <code>ld</code> from emitting relocation entries that is used for external symbols.</p>
+</li>
+<li><p><code>-z notext</code> : not sure about this one</p>
+</li>
+</ul>
+<h2 id="Some-Questions"><a href="#Some-Questions" class="headerlink" title="Some Questions"></a>Some Questions</h2><p>The code analysis above is pretty thorough, but a lot of further questions are raised as well, hope I will be able to answer them as I learn more.</p>
+<ul>
+<li><p>What are the actual differences when we add the four linker options? What if we don’t add them?</p>
+</li>
+<li><p>Originally I thought all of the relocation entry would disappear after turning off KASLR, but they still persisted, this doesn’t affect the kernel from running properly but doesn’t this waste some space?</p>
+</li>
+<li><p>How does the build process limit the relocation entry to only emit the <code>R_AARCH64_RELATIVE</code> type? What circumstances generate different relocation types?</p>
+</li>
+</ul>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Introduction"><span class="top-box-text">Introduction</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#KASLR-Implementation"><span class="top-box-text">KASLR Implementation</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Execution-Context"><span class="top-box-text">Execution Context</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#primary-switch"><span class="top-box-text">__primary_switch</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kaslr-early-init"><span class="top-box-text">kaslr_early_init</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#relocate-kernel"><span class="top-box-text">__relocate_kernel</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Ending-of-primary-switch"><span class="top-box-text">Ending of __primary_switch</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Linker-Options"><span class="top-box-text">Linker Options</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Some-Questions"><span class="top-box-text">Some Questions</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/kaslr/">
+          <h3 class="post-title">
+            Next: Linux ARM64 KASLR 實作分析(1): 內核映像位址隨機化
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

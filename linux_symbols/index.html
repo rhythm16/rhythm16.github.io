@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Looking for Kernel Symbol Addresses in the Linux Kernel Image</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Looking for Kernel Symbol Addresses in the Linux Kernel Image, blog keywords">
+<meta name="description" content="I have always wondered how the linux kernel translates addresses to symbol names. This mechanism (called kallsyms) is us">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Looking for Kernel Symbol Addresses in the Linux Kernel Image</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-01-27</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/kallsyms/">
+              kallsyms
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <p>I have always wondered how the linux kernel translates addresses to symbol names. This mechanism (called <code>kallsyms</code>) is used in multiple places in the kernel, for example in the <code>panic()</code> call the kernel prints out the call trace with function names and offsets with no problem at all, also the <code>ftrace</code> system is able to show the user all function names that the kernel has run, similarly, using <code>kallsyms</code>.</p>
+<p><a target="_blank" rel="noopener" href="https://blog.csdn.net/jasonchen_gbd/article/details/44025681?spm=1001.2101.3001.6650.1&utm_medium=distribute.pc_relevant.none-task-blog-2~default~CTRLIST~default-1.no_search_link&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2~default~CTRLIST~default-1.no_search_link&utm_relevant_index=2">This article</a> written in Chinese explains the translation mechanism pretty well, and is worth a read if one is interested in knowing how it is done. However when discussing this topic with a professor, he asked me how I can find the raw bytes of the symbols used by <code>kallsyms</code> which are explained in the linked article above e.g. <code>kallsyms_addresses</code> and <code>kallsyms_num_syms</code>, etc. So, I set to find out where they are.</p>
+<blockquote>
+<p>It is unlikely for me and you to use the exact same kernel image, so the offsets and symbols won’t be the same. Moreover, I’m using an ARMv8 image of linux version 5.4.</p>
+</blockquote>
+<p>From the article linked above we know that the <code>kallsyms</code> symbols are in the <code>.rodata</code> section, lets see where it is:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">$ aarch64-linux-gnu-readelf -l vmlinux</span><br><span class="line">Elf file type is EXEC (Executable file)</span><br><span class="line">Entry point 0xffff800010080000</span><br><span class="line">There are 5 program headers, starting at offset 64</span><br><span class="line"></span><br><span class="line">Program Headers:</span><br><span class="line">  Type           Offset             VirtAddr           PhysAddr</span><br><span class="line">                 FileSiz            MemSiz              Flags  Align</span><br><span class="line">  LOAD           0x0000000000010000 0xffff800010080000 0xffff800010080000</span><br><span class="line">                 0x00000000008f2390 0x00000000008f2390  R E    0x10000</span><br><span class="line">  LOAD           0x0000000000910000 0xffff800010980000 0xffff800010980000</span><br><span class="line">                 0x00000000002de264 0x00000000002de264  RW     0x10000</span><br><span class="line">  LOAD           0x0000000000bf0000 0xffff800010c70000 0xffff800010c70000</span><br><span class="line">                 0x00000000001bf200 0x00000000001f51b8  RWE    0x10000</span><br><span class="line">  NOTE           0x0000000000bee228 0xffff800010c5e228 0xffff800010c5e228</span><br><span class="line">                 0x000000000000003c 0x000000000000003c  R      0x4</span><br><span class="line">  GNU_STACK      0x0000000000000000 0x0000000000000000 0x0000000000000000</span><br><span class="line">                 0x0000000000000000 0x0000000000000000  RW     0x10</span><br><span class="line"></span><br><span class="line"> Section to Segment mapping:</span><br><span class="line">  Segment Sections...</span><br><span class="line">   00     .head.text .text </span><br><span class="line">   01     .rodata .modinfo .init.eh_frame .pci_fixup __ksymtab __ksymtab_gpl __ksymtab_strings __param __modver __ex_table .notes </span><br><span class="line">   02     .init.text .exit.text .altinstructions .altinstr_replacement .init.data .data..percpu .data __bug_table .mmuoff.data.write .mmuoff.data.read .pecoff_edata_padding .bss </span><br><span class="line">   03     .notes </span><br><span class="line">   04     </span><br></pre></td></tr></table></figure>
+
+<p>Nice, <code>.rodata</code> is located at the very beginning of the second segment, very convenient. The space between the first segment and the second is obtained by subtracting the offsets of the two segments, <code>0x910000 - 0x10000 = 0x900000</code>. The first segment is placed at the very beginning of the kernel image, therefore starting from file offset <code>0x900000</code> of the kernel image should be the place where <code>.rodata</code> belongs. Now we just have to see where all those symbols are relative to the start of the <code>.rodata</code> section.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">$ aarch64-linux-gnu-readelf -s vmlinux | grep kallsyms</span><br><span class="line">...</span><br><span class="line"> 80586: ffff800010a73318     0 NOTYPE  GLOBAL DEFAULT    3 kallsyms_relative_base</span><br><span class="line"> 81462: ffff800010b5fd68     0 NOTYPE  GLOBAL DEFAULT    3 kallsyms_token_table</span><br><span class="line"> 81931: ffff800010b600d8     0 NOTYPE  GLOBAL DEFAULT    3 kallsyms_token_index</span><br><span class="line"> 83269: ffff800010a73320     0 NOTYPE  GLOBAL DEFAULT    3 kallsyms_num_syms</span><br><span class="line"> 85611: ffff800010a73328     0 NOTYPE  GLOBAL DEFAULT    3 kallsyms_names</span><br><span class="line"> 88091: ffff80001018aee0   204 FUNC    GLOBAL DEFAULT    2 kallsyms_lookup_size_offs</span><br><span class="line"> 88746: ffff80001018ad60   208 FUNC    GLOBAL DEFAULT    2 kallsyms_on_each_symbol</span><br><span class="line"> 91655: ffff80001018b7b0    96 FUNC    GLOBAL DEFAULT    2 kallsyms_show_value</span><br><span class="line"> 91983: ffff80001018ae30   172 FUNC    GLOBAL DEFAULT    2 kallsyms_lookup_name</span><br><span class="line"> 93340: ffff80001018afb0   348 FUNC    GLOBAL DEFAULT    2 kallsyms_lookup</span><br><span class="line"> 93641: ffff800010d6a07c     4 OBJECT  GLOBAL DEFAULT   20 bpf_jit_kallsyms</span><br><span class="line"> 93956: ffff80001018a640   260 FUNC    GLOBAL DEFAULT    2 module_kallsyms_lookup_na</span><br><span class="line"> 94125: ffff8000101e5290   204 FUNC    GLOBAL DEFAULT    2 bpf_prog_kallsyms_del</span><br><span class="line"> 94245: ffff800010b5f8c8     0 NOTYPE  GLOBAL DEFAULT    3 kallsyms_markers</span><br><span class="line"> 94636: ffff800010a29558     0 NOTYPE  GLOBAL DEFAULT    3 kallsyms_offsets</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+
+<p>Note that one of, if not the most important symbol <code>kallsyms_addresses</code> is not present. This threw me off quite a bit, but eventually I found that in the file which is responsible for generating the symbol information <code>/scripts/kallsyms.c</code> it is explained that there are two ways of storing the addresses of kernel symbols, the first way uses <code>kallsyms_addresses</code> and it simply stores all the symbol addresses in the <code>kallsyms_addresses</code> “array”. The second way is to save offsets relative to a base address, which is the address of the symbol with the lowest address. The two ways in summary:</p>
+<ol>
+<li><code>kallsyms_addresses</code> stores all the address</li>
+<li><code>kallsyms_relative_base</code> stores the base address and <code>kallsyms_offsets</code> store all the offsets</li>
+</ol>
+<p>Let’s first look for <code>kallsyms_relative_base</code>, its address is <code>0xffff800010a73318</code>, and the address of <code>.rodata</code> is <code>0xffff800010980000</code>, this gives us the offset <code>0xf3318</code>, adding back the offset of <code>.rodata</code> in the image (<code>0x900000</code>) we get the final file offset of the symbol <code>0x9f3318</code>. </p>
+<p>Check this in hexdump:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">$ hexdump Image</span><br><span class="line">...</span><br><span class="line">09f3300 51b0 00de 51b8 00de 6000 00de 9000 00de</span><br><span class="line">09f3310 9000 00de 0000 0000 0000 1008 8000 ffff</span><br><span class="line">09f3320 276f 0001 0000 0000 fe04 6568 05be 5f54</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+<p>Confirm that <code>0xffff800010080000</code> is the first symbol address.<br>We can calculate the file offset of the symbol offsets <code>kallsyms_offsets</code> the same way, the result is <code>0x9a9558</code></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">09a9550 656c 0000 0000 0000 0000 0000 0000 0000</span><br><span class="line">09a9560 0040 0000 0044 0000 0058 0000 0070 0000</span><br><span class="line">09a9570 00f8 0000 1000 0000 1000 0000 1000 0000</span><br><span class="line">09a9580 1000 0000 1070 0000 11a0 0000 1230 0000</span><br><span class="line">09a9590 12e0 0000 1378 0000 1458 0000 1558 0000</span><br></pre></td></tr></table></figure>
+<p>It is an array with increasing elements of four bytes each, starting from <code>0x00000000</code>, my guess for the reason why there are two symbols of offset <code>0x00000000</code> is that there are two symbols both refering to the very start of the kernel image.</p>
+<p>Lastly let’s see how many kernel symbols are there (<code>kallsyms_num_syms</code>), <code>0xffff800010a73320 - 0xffff800010980000 + 0x900000 = 0x9f3320</code>. It’s just the next 8 bytes of <code>kallsyms_relative_base</code>.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">09f3320 276f 0001 0000 0000 fe04 6568 05be 5f54</span><br></pre></td></tr></table></figure>
+<p>so the value is <code>0x1276f</code>, 75631 in decimal.</p>
+
+        </div>
+        <div class="top-div">
+          
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/mem_barriers/">
+          <h3 class="post-title">
+            Next: Memory Barriers 筆記
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

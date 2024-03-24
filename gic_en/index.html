@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Notes on GIC - Hardware Handling of Virtual Interrupt Direct Injection</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Notes on GIC - Hardware Handling of Virtual Interrupt Direct Injection, blog keywords">
+<meta name="description" content="IntroductionI have been reading ARM’s ”GICv3 and GICv4 Software Overview” for the past few weeks, it’s a nice introducti">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Notes on GIC - Hardware Handling of Virtual Interrupt Direct Injection</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-12-17</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/GIC/">
+              GIC
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><p>I have been reading ARM’s ”GICv3 and GICv4 Software Overview” for the past few weeks, it’s a nice introduction to GICv3, v4. ARM emitted some “special” use cases e.g. hardware with only one security state, and using the legacy mode to avoid this introductory book becoming too long. Reading this first makes it a lot easier to dive in to the official spec “Arm® Generic Interrupt Controller Architecture Specification GIC architecture version 3 and version 4” later on.</p>
+<p>It’s way too easy to get tunnel-visioned with all the small details in these kinds of documents, you might feel like you understood all the details but after a while you realize you’re not getting the big picture. This is one of the motivations for this article, I would like to explain parts of the content in my own words to make sure I at least have a feel for the context.Therefore much assumptions (e.g. using the typical configurations) are made, and also much basics are skipped.</p>
+<p>I created this visualized note with Heptabase to aid my learning, you are welcome to check it out:</p>
+<p><a target="_blank" rel="noopener" href="https://app.heptabase.com/w/d4dfaf701a143f308454cb962ba9963472a27873bc9a2b2779e89d9430a972ac">https://app.heptabase.com/w/d4dfaf701a143f308454cb962ba9963472a27873bc9a2b2779e89d9430a972ac</a></p>
+<h2 id="Disclaimer"><a href="#Disclaimer" class="headerlink" title="Disclaimer"></a>Disclaimer</h2><p>The following will be about virtual interrupts, so Collection Table, Collection ID are skipped.</p>
+<p>Furthermore, the steps which hypervisor should take are necessary but not sufficient, I’m just listing out what must be done architecurally.</p>
+<h2 id="Steps-Involved-in-Direct-Injection-of-Virtual-Interrupts"><a href="#Steps-Involved-in-Direct-Injection-of-Virtual-Interrupts" class="headerlink" title="Steps Involved in Direct Injection of Virtual Interrupts"></a>Steps Involved in Direct Injection of Virtual Interrupts</h2><p>Start from a peripheral sending an LPI (Local Peripheral Interrupt):</p>
+<ol>
+<li><p>The peripheral knows the address of the ITS (Interrupt Translation Service) on the bus, then writes the Device ID and Event ID to the <code>GITS_TRANSLALTOR</code> register to send an interrupt.</p>
+</li>
+<li><p>After sensing the LPI, ITS reads one of <code>GITS_BASER[0..7]</code> whose <code>Type</code> field is Device Table to get the address of the Device Table. The Device Table is a table in memory which records the translation of Device IDs to Interrupt Translation Tables’ base addresses.</p>
+</li>
+<li><p>The hardware reads the address of the Interrupt Translation Table corresponding to the Device ID written in.</p>
+</li>
+<li><p>The hardware reads the Interrupt Translation Table to look for the entry corresponding to the Event ID written in, and reads either (assume it is the second case going forward):</p>
+<ol>
+<li><p>a collection ID and an INTID</p>
+</li>
+<li><p>a vINTID and a vPE ID, and optionally a doorbell pINTID</p>
+</li>
+</ol>
+</li>
+<li><p>The hardware reads one of <code>GITS_BASER[0..7]</code> whose <code>Type</code> field is vPE Table to get the address of the vPE Table.</p>
+</li>
+<li><p>The hardware looks into the vPE Table for the entry corresponding to the vPE ID (from step 4) to get a target Redistributor and a virtual LPI Pending Table Address.</p>
+</li>
+<li><p>The hardware reads the <code>GICR_VPENDBASER</code> register of the target Redistributor and compares it with the virtual LPI Pending Table Address read from step 6, there are two possibilities (assume it is the first case going forward):</p>
+<ol>
+<li><p>it’s a match, go on to inject the virtual interrupt</p>
+</li>
+<li><p>it’s not a match, inject physical interrupt with the pINTID if it is supplied in the 4’th step</p>
+</li>
+</ol>
+</li>
+<li><p>The running vPE is directly interrupted with the virtual interrupt without exiting the VM, and starts running its interrupt service routine, it communicates directly with the Virtual CPU Interface, and ends the interrupt by writing to the <code>EOI</code> register directly.</p>
+</li>
+</ol>
+<p>Hypervisor software must initialize all kinds of structures before using virtual interrupt direct injection, including:</p>
+<h3 id="Device-Table"><a href="#Device-Table" class="headerlink" title="Device Table"></a>Device Table</h3><p>This is a global table, software must allocate memory for it and write the base address into <code>GITS_BASER[0..7]</code> whose <code>Type</code> is devicie table, then fill each Device ID’s entry with the corresponding Interrupt Translation Table base address.</p>
+<h3 id="Interrupt-Translation-Table"><a href="#Interrupt-Translation-Table" class="headerlink" title="Interrupt Translation Table"></a>Interrupt Translation Table</h3><p>Each Device ID has an Interrupt Translation Table which software must allocate, and the base address must be filled in to the Device Table. The ITTs contain Event ID → vINTID:vPE ID (optionally a doorbell pINTID as well) mappings, for each Device ID.</p>
+<h3 id="vPE-Table"><a href="#vPE-Table" class="headerlink" title="vPE Table"></a>vPE Table</h3><p>Also a table software must allocate space for, and write the address into <code>GITS_BASER[0..7]</code> whose <code>Type</code> is vPE Table. It should be filled with vPE ID → target Redistributor:vLPI Pending Table mappings.</p>
+<h3 id="Summary"><a href="#Summary" class="headerlink" title="Summary"></a>Summary</h3><p>The three tables above essentially translates Device ID:Event ID into:</p>
+<ul>
+<li><p>vINTID (virtual interrupt number)</p>
+</li>
+<li><p>target redistributor (which PE)</p>
+</li>
+<li><p>vLPI Pending Table Address (is the PE running the specified vPE?)</p>
+</li>
+</ul>
+<p>These information enables the hardware to directly inject virtual interrupts.</p>
+<h2 id="Filling-in-the-Tables"><a href="#Filling-in-the-Tables" class="headerlink" title="Filling in the Tables"></a>Filling in the Tables</h2><p>To fill the three tables</p>
+<ul>
+<li><p>Device Table</p>
+</li>
+<li><p>Interrupt Translation Table</p>
+</li>
+<li><p>vPE Table</p>
+</li>
+</ul>
+<p>You don’t actually write to the memory area allocated for them, but instead send commands to the ITS to instruct the hardware to write the correct entries. An in-memory command queue is used to send command to the ITS, software writes to the command queue to send commands. The command queue must also be allocated by software and the base address, read head, and write head should be written in to <code>GITS_BASERn</code> , <code>GITS_CREADR</code> , and <code>GITS_CWRITER</code> registers respectively.</p>
+<h2 id="Setting-up-Direct-Injection-of-Virtual-Interrupts"><a href="#Setting-up-Direct-Injection-of-Virtual-Interrupts" class="headerlink" title="Setting up Direct Injection of Virtual Interrupts"></a>Setting up Direct Injection of Virtual Interrupts</h2><p>Let’s say VM <code>x</code> ‘s vPE <code>y</code> is running on PE <code>z</code> , the hypervisor wishes to forward Device ID <code>d</code> ‘s Event ID <code>e</code> to it as an virtual interrupt with the number <code>f</code>, it must:</p>
+<ol>
+<li><p>write vINTID = <code>f</code> , vPE ID = <code>y</code> in the Interrupt Translation Table entry that is translated using the combination <code>d:e</code></p>
+</li>
+<li><p>set the entry of the vPE Table corresponding to vPE ID = <code>y</code> ‘s target redistributor to <code>z</code> , and the address of the vPE’s vLPI Pending Table</p>
+</li>
+</ol>
+<h2 id="Migrating-vPE"><a href="#Migrating-vPE" class="headerlink" title="Migrating vPE"></a>Migrating vPE</h2><p>If the hypervisor is trying to move vPE <code>y</code> from PE <code>x1</code> to <code>x2</code> , it must:</p>
+<ol>
+<li><p>clear <code>x1</code> redistributor’s <code>GICR_VPENDBASER</code> , and move the value into <code>x2</code> redistributor’s <code>GICR_VPENDBASER</code></p>
+</li>
+<li><p>change vPE ID <code>y</code> ‘s vPE Table entry’s target redistributor from <code>x1</code> to <code>x2</code></p>
+</li>
+</ol>
+<h2 id="Summary-of-the-Acronyms"><a href="#Summary-of-the-Acronyms" class="headerlink" title="Summary of the Acronyms"></a>Summary of the Acronyms</h2><ul>
+<li><p>PE: Processing Element</p>
+<ul>
+<li>hardware</li>
+</ul>
+</li>
+<li><p>CPU Interface</p>
+<ul>
+<li>hardware, controlled using <code>mrs</code> , <code>msr</code> instructions</li>
+</ul>
+</li>
+<li><p>Redistributor</p>
+<ul>
+<li><p>hardware, controlled using MMIO</p>
+</li>
+<li><p>one for each PE</p>
+</li>
+</ul>
+</li>
+<li><p>Distributor</p>
+<ul>
+<li><p>hardware, controlled using MMIO</p>
+</li>
+<li><p>one for each GIC</p>
+</li>
+</ul>
+</li>
+<li><p>Interrupt Translation Service</p>
+<ul>
+<li><p>hardware, controlled using MMIO</p>
+</li>
+<li><p>can exist multiple instances on a system, but this article considers the case with one instance</p>
+</li>
+</ul>
+</li>
+<li><p>Device Table</p>
+<ul>
+<li><p>software table, must allocate memory for it</p>
+</li>
+<li><p>write to the command queue to fill it</p>
+</li>
+</ul>
+</li>
+<li><p>Interrupt Translation Table</p>
+<ul>
+<li><p>software table, must allocate memory for it</p>
+</li>
+<li><p>write to the command queue to fill it</p>
+</li>
+</ul>
+</li>
+<li><p>vPE Table</p>
+<ul>
+<li><p>software table, must allocate memory for it</p>
+</li>
+<li><p>write to the command queue to fill it</p>
+</li>
+</ul>
+</li>
+<li><p>Command Queue</p>
+<ul>
+<li><p>software table, must allocate memory for it</p>
+</li>
+<li><p>write to it to control:</p>
+<ul>
+<li><p>Device Table</p>
+</li>
+<li><p>Interrupt Translation Table</p>
+</li>
+<li><p>vPE Table</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>LPI Configuration Table</p>
+<ul>
+<li><p>software table, must allocate memory for it</p>
+</li>
+<li><p>write to it directly</p>
+</li>
+</ul>
+</li>
+<li><p>LPI Pending Table</p>
+<ul>
+<li><p>software table, must allocate memory for it</p>
+</li>
+<li><p>write to it directly</p>
+</li>
+</ul>
+</li>
+<li><p>vLPI Configuration Table</p>
+<ul>
+<li><p>software table, must allocate memory for it</p>
+</li>
+<li><p>write to it directly</p>
+</li>
+</ul>
+</li>
+<li><p>vLPI Pending Table</p>
+<ul>
+<li><p>software table, must allocate memory for it</p>
+</li>
+<li><p>write to it directly</p>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Introduction"><span class="top-box-text">Introduction</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Disclaimer"><span class="top-box-text">Disclaimer</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Steps-Involved-in-Direct-Injection-of-Virtual-Interrupts"><span class="top-box-text">Steps Involved in Direct Injection of Virtual Interrupts</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Device-Table"><span class="top-box-text">Device Table</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Interrupt-Translation-Table"><span class="top-box-text">Interrupt Translation Table</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#vPE-Table"><span class="top-box-text">vPE Table</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Summary"><span class="top-box-text">Summary</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Filling-in-the-Tables"><span class="top-box-text">Filling in the Tables</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Setting-up-Direct-Injection-of-Virtual-Interrupts"><span class="top-box-text">Setting up Direct Injection of Virtual Interrupts</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Migrating-vPE"><span class="top-box-text">Migrating vPE</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Summary-of-the-Acronyms"><span class="top-box-text">Summary of the Acronyms</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/gic/">
+          <h3 class="post-title">
+            Next: GIC筆記-虛擬中斷直接注入之硬體處理
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

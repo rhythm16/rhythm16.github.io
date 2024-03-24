@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>KVM ARM: The New Page Table Walker</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="KVM ARM: The New Page Table Walker, blog keywords">
+<meta name="description" content="
+Linux version: v6.0
+Architecture: ARMv8
+
+ForewordDuring the 5.10 release cycle, KVM ARM had many code improvements in p">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">KVM ARM: The New Page Table Walker</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-11-08</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KVM/">
+              KVM
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/page-tables/">
+              page tables
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux version: v6.0</p>
+<p>Architecture: ARMv8</p>
+</blockquote>
+<h2 id="Foreword"><a href="#Foreword" class="headerlink" title="Foreword"></a>Foreword</h2><p>During the 5.10 release cycle, KVM ARM had many code improvements in preparation for the <a target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=wY-u6n75iXc">google pkvm</a> project. We are going to talk about one part of it here: the new page table walker.</p>
+<p>Previously the logic for walking page tables were implemented wherever it was needed, e.g. functions <code>create_hyp_&#123;p4d, pud, pmd, pte&#125;_mappings</code>. This approach causes the code for walking page tables to be duplicated. To improve this, a new modularized page table walker was introduced in 5.10. Other page table accesses benefit from using this same facility.</p>
+<h2 id="Important-Structures"><a href="#Important-Structures" class="headerlink" title="Important Structures"></a>Important Structures</h2><p>Some information need to be provided when using the new page table walker:</p>
+<ol>
+<li>The page table that is going to be accessed (<code>struct kvm_pgtable</code>)</li>
+<li>Operations to be done to the page table, and when to do them (<code>struct kvm_pgtable_walker</code>)</li>
+<li>The virtual address range to be accessed (<code>struct kvm_pgtable_walk_data</code>)</li>
+</ol>
+<h3 id="kvm-pgtable"><a href="#kvm-pgtable" class="headerlink" title="kvm_pgtable"></a><code>kvm_pgtable</code></h3><p>This struct stores the metadata of a page table. The comments are self-explanatory.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * struct kvm_pgtable - KVM page-table.</span></span><br><span class="line"><span class="comment"> * @ia_bits:		Maximum input address size, in bits.</span></span><br><span class="line"><span class="comment"> * @start_level:	Level at which the page-table walk starts.</span></span><br><span class="line"><span class="comment"> * @pgd:		Pointer to the first top-level entry of the page-table.</span></span><br><span class="line"><span class="comment"> * @mm_ops:		Memory management callbacks.</span></span><br><span class="line"><span class="comment"> * @mmu:		Stage-2 KVM MMU struct. Unused for stage-1 page-tables.</span></span><br><span class="line"><span class="comment"> * @flags:		Stage-2 page-table flags.</span></span><br><span class="line"><span class="comment"> * @force_pte_cb:	Function that returns true if page level mappings must</span></span><br><span class="line"><span class="comment"> *			be used instead of block mappings.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable</span> &#123;</span>  </span><br><span class="line">        u32                                     ia_bits;</span><br><span class="line">        u32                                     start_level;</span><br><span class="line">        <span class="type">kvm_pte_t</span>                               *pgd;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_mm_ops</span>               *<span class="title">mm_ops</span>;</span></span><br><span class="line">                                  </span><br><span class="line">        <span class="comment">/* Stage-2 only */</span>  </span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_s2_mmu</span>                       *<span class="title">mmu</span>;</span></span><br><span class="line">        <span class="class"><span class="keyword">enum</span> <span class="title">kvm_pgtable_stage2_flags</span>           <span class="title">flags</span>;</span></span><br><span class="line">        <span class="type">kvm_pgtable_force_pte_cb_t</span>              force_pte_cb;</span><br><span class="line">&#125;;  </span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-walker"><a href="#kvm-pgtable-walker" class="headerlink" title="kvm_pgtable_walker"></a><code>kvm_pgtable_walker</code></h3><p>The user sets up this struct with the callback used during the walk, also when to invoke it.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * struct kvm_pgtable_walker - Hook into a page-table walk.</span></span><br><span class="line"><span class="comment"> * @cb:		Callback function to invoke during the walk.</span></span><br><span class="line"><span class="comment"> * @arg:	Argument passed to the callback function.</span></span><br><span class="line"><span class="comment"> * @flags:	Bitwise-OR of flags to identify the entry types on which to</span></span><br><span class="line"><span class="comment"> *		invoke the callback function.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walker</span> &#123;</span></span><br><span class="line">        <span class="type">const</span> <span class="type">kvm_pgtable_visitor_fn_t</span>          cb;       </span><br><span class="line">        <span class="type">void</span> * <span class="type">const</span>                            arg; </span><br><span class="line">        <span class="type">const</span> <span class="class"><span class="keyword">enum</span> <span class="title">kvm_pgtable_walk_flags</span>       <span class="title">flags</span>;</span></span><br><span class="line"><span class="comment">// there are three non-exclusive options for flags:</span></span><br><span class="line"><span class="comment">// 1. KVM_PGTABLE_WALK_LEAF: call callback when visiting a leaf node</span></span><br><span class="line"><span class="comment">// 2. KVM_PGTABLE_WALK_TABLE_PRE: call callback before visiting children</span></span><br><span class="line"><span class="comment">// 3. KVM_PGTABLE_WALK_TABLE_POST: call callback before visiting children</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-walk-data"><a href="#kvm-pgtable-walk-data" class="headerlink" title="kvm_pgtable_walk_data"></a><code>kvm_pgtable_walk_data</code></h3><p>What range to walk, it also points to instances of the two previous structs.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walk_data</span> &#123;</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable</span>              *<span class="title">pgt</span>;</span> <span class="comment">// points to the page table metadata</span></span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walker</span>       *<span class="title">walker</span>;</span> <span class="comment">// points to the walker</span></span><br><span class="line"></span><br><span class="line">        u64                             addr; <span class="comment">// starting address for the walk</span></span><br><span class="line">        u64                             end; <span class="comment">// ending address for the walk</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h2 id="Implementation-of-the-New-Walker"><a href="#Implementation-of-the-New-Walker" class="headerlink" title="Implementation of the New Walker"></a>Implementation of the New Walker</h2><p>Call <code>kvm_pgtable_walk</code> to use the new page table walker:</p>
+<h3 id="kvm-pgtable-walk"><a href="#kvm-pgtable-walk" class="headerlink" title="kvm_pgtable_walk"></a><code>kvm_pgtable_walk</code></h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">kvm_pgtable_walk</span><span class="params">(<span class="keyword">struct</span> kvm_pgtable *pgt, u64 addr, u64 size,</span></span><br><span class="line"><span class="params">                     <span class="keyword">struct</span> kvm_pgtable_walker *walker)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walk_data</span> <span class="title">walk_data</span> =</span> &#123;</span><br><span class="line">                .pgt    = pgt,</span><br><span class="line">                .addr   = ALIGN_DOWN(addr, PAGE_SIZE),</span><br><span class="line">                .end    = PAGE_ALIGN(walk_data.addr + size),</span><br><span class="line">                .walker = walker,</span><br><span class="line">        &#125;;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> _kvm_pgtable_walk(&amp;walk_data);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>This function expects the caller to provide <code>pgt</code> and <code>walker</code> initialized, then it creates a <code>kvm_pgtable_walk_data</code> together with <code>addr</code> and <code>size</code>. Then calls <code>_kvm_pgtable_walk</code>.</p>
+<h3 id="kvm-pgtable-walk-1"><a href="#kvm-pgtable-walk-1" class="headerlink" title="_kvm_pgtable_walk"></a><code>_kvm_pgtable_walk</code></h3><p>This function is responsible for the root pages of the page table, see the comments added for more info.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> _kvm_pgtable_walk(<span class="keyword">struct</span> kvm_pgtable_walk_data *data)</span><br><span class="line">&#123;</span><br><span class="line">        u32 idx;</span><br><span class="line">        <span class="type">int</span> ret = <span class="number">0</span>;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable</span> *<span class="title">pgt</span> =</span> data-&gt;pgt;</span><br><span class="line">        u64 limit = BIT(pgt-&gt;ia_bits);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (data-&gt;addr &gt; limit || data-&gt;end &gt; limit) <span class="comment">// range check</span></span><br><span class="line">                <span class="keyword">return</span> -ERANGE;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (!pgt-&gt;pgd) <span class="comment">// does root page table exist?</span></span><br><span class="line">                <span class="keyword">return</span> -EINVAL;</span><br><span class="line">        <span class="comment">// there may be multiple concatenated stage 2 page table root pages</span></span><br><span class="line">        <span class="comment">// (less than 16 pages) under certain system register settings</span></span><br><span class="line">        <span class="comment">// in ARMv8, this loop iterates over the multiple root pages</span></span><br><span class="line">        <span class="comment">// if the range to walk is large enough to requires that</span></span><br><span class="line">        <span class="keyword">for</span> (idx = kvm_pgd_page_idx(data); data-&gt;addr &lt; data-&gt;end; ++idx) &#123;</span><br><span class="line">                <span class="comment">// ptep points to the root page of the current iteration</span></span><br><span class="line">                <span class="type">kvm_pte_t</span> *ptep = &amp;pgt-&gt;pgd[idx * PTRS_PER_PTE];</span><br><span class="line">                <span class="comment">// call the lower level implementation</span></span><br><span class="line">                ret = __kvm_pgtable_walk(data, ptep, pgt-&gt;start_level);</span><br><span class="line">                <span class="keyword">if</span> (ret)</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line"> </span><br><span class="line">        <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-walk-2"><a href="#kvm-pgtable-walk-2" class="headerlink" title="__kvm_pgtable_walk"></a><code>__kvm_pgtable_walk</code></h3><p>This function iterates over the entries in a page.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> __kvm_pgtable_walk(<span class="keyword">struct</span> kvm_pgtable_walk_data *data,</span><br><span class="line">                &gt;             <span class="type">kvm_pte_t</span> *pgtable, u32 level)</span><br><span class="line">&#123;</span><br><span class="line">        u32 idx;</span><br><span class="line">        <span class="type">int</span> ret = <span class="number">0</span>;</span><br><span class="line">        <span class="comment">// return if this page table level is larger than max level (4)</span></span><br><span class="line">        <span class="keyword">if</span> (WARN_ON_ONCE(level &gt;= KVM_PGTABLE_MAX_LEVELS))</span><br><span class="line">                <span class="keyword">return</span> -EINVAL;</span><br><span class="line">        <span class="comment">// use kvm_pgtable_idx to calculate the index to start with</span></span><br><span class="line">        <span class="keyword">for</span> (idx = kvm_pgtable_idx(data, level); idx &lt; PTRS_PER_PTE; ++idx) &#123;</span><br><span class="line">                <span class="comment">// calculate the current entry&#x27;s address</span></span><br><span class="line">                <span class="type">kvm_pte_t</span> *ptep = &amp;pgtable[idx];</span><br><span class="line">                <span class="comment">// break if completed walking the range</span></span><br><span class="line">                <span class="keyword">if</span> (data-&gt;addr &gt;= data-&gt;end)</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">                <span class="comment">// input data, the current entry&#x27;s address, and current level</span></span><br><span class="line">                <span class="comment">// to the function that does the visiting</span></span><br><span class="line">                ret = __kvm_pgtable_visit(data, ptep, level);</span><br><span class="line">                <span class="keyword">if</span> (ret)</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-visit"><a href="#kvm-pgtable-visit" class="headerlink" title="__kvm_pgtable_visit"></a><code>__kvm_pgtable_visit</code></h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">int</span> __kvm_pgtable_visit(<span class="keyword">struct</span> kvm_pgtable_walk_data *data,</span><br><span class="line">                                      <span class="type">kvm_pte_t</span> *ptep, u32 level)</span><br><span class="line">&#123;</span><br><span class="line">        <span class="type">int</span> ret = <span class="number">0</span>;</span><br><span class="line">        u64 addr = data-&gt;addr;</span><br><span class="line">        <span class="comment">// pte: the value of the current entry</span></span><br><span class="line">        <span class="type">kvm_pte_t</span> *childp, pte = *ptep;</span><br><span class="line">        <span class="comment">// does this entry point to a table?</span></span><br><span class="line">        <span class="type">bool</span> table = kvm_pte_table(pte, level);</span><br><span class="line">        <span class="class"><span class="keyword">enum</span> <span class="title">kvm_pgtable_walk_flags</span> <span class="title">flags</span> =</span> data-&gt;walker-&gt;flags;</span><br><span class="line">        <span class="comment">// if the entry points to a table and the caller wishes to visit</span></span><br><span class="line">        <span class="comment">// the entry before its children</span></span><br><span class="line">        <span class="keyword">if</span> (table &amp;&amp; (flags &amp; KVM_PGTABLE_WALK_TABLE_PRE)) &#123;</span><br><span class="line">                <span class="comment">// kvm_pgtable_visitor_cb is just a simple wrapper for</span></span><br><span class="line">                <span class="comment">// passing arguments and calling walker-&gt;cb</span></span><br><span class="line">                ret = kvm_pgtable_visitor_cb(data, addr, level, ptep,</span><br><span class="line">                                             KVM_PGTABLE_WALK_TABLE_PRE);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// if entry points to a physical page (not the next level table)</span></span><br><span class="line">        <span class="comment">// and the caller wishes to visit the entry before its children</span></span><br><span class="line">        <span class="keyword">if</span> (!table &amp;&amp; (flags &amp; KVM_PGTABLE_WALK_LEAF)) &#123;</span><br><span class="line">                <span class="comment">// call walker-&gt;cb</span></span><br><span class="line">                ret = kvm_pgtable_visitor_cb(data, addr, level, ptep,</span><br><span class="line">                                             KVM_PGTABLE_WALK_LEAF);</span><br><span class="line">                <span class="comment">// the memory content where ptep points to may change after</span></span><br><span class="line">                <span class="comment">// calling cb, for example cb might allocate the next level</span></span><br><span class="line">                <span class="comment">// table and inserted its address in the entry, so pte is</span></span><br><span class="line">                <span class="comment">// updated here</span></span><br><span class="line">                pte = *ptep;</span><br><span class="line">                <span class="comment">// also update whether this pte points to a table or not</span></span><br><span class="line">                table = kvm_pte_table(pte, level);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (ret)</span><br><span class="line">                <span class="keyword">goto</span> out;</span><br><span class="line">        <span class="comment">// it the entry does not point to a table (it is a leaf node of the</span></span><br><span class="line">        <span class="comment">// page table)</span></span><br><span class="line">        <span class="keyword">if</span> (!table) &#123;</span><br><span class="line">                <span class="comment">// align data-&gt;addr to the size of this page table level </span></span><br><span class="line">                <span class="comment">// translation</span></span><br><span class="line">                data-&gt;addr = ALIGN_DOWN(data-&gt;addr, kvm_granule_size(level));</span><br><span class="line">                <span class="comment">// step over this level&#x27;s translation size</span></span><br><span class="line">                data-&gt;addr += kvm_granule_size(level);</span><br><span class="line">                <span class="comment">// return after processing this leaf node</span></span><br><span class="line">                <span class="keyword">goto</span> out;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// the entry points to a table if this gets executed, use kvm_pte_follow</span></span><br><span class="line">        <span class="comment">// to get the next level page table&#x27;s address. Note that entry holds the</span></span><br><span class="line">        <span class="comment">// physcal address of the next level table, so kvm_pte_follow uses</span></span><br><span class="line">        <span class="comment">// phys_to_virt to transform the address held in entry to EL1 kernel VA</span></span><br><span class="line">        <span class="comment">// used by software here.</span></span><br><span class="line">        childp = kvm_pte_follow(pte, data-&gt;pgt-&gt;mm_ops);</span><br><span class="line">        <span class="comment">// call __kvm_pgtable_walk to walk the next level page table</span></span><br><span class="line">        <span class="comment">// see explanation after this code block </span></span><br><span class="line">        ret = __kvm_pgtable_walk(data, childp, level + <span class="number">1</span>);</span><br><span class="line">        <span class="keyword">if</span> (ret)</span><br><span class="line">                <span class="keyword">goto</span> out;</span><br><span class="line">        <span class="comment">// if the caller wishes to call cb after visiting current entry and all</span></span><br><span class="line">        <span class="comment">// of its children</span></span><br><span class="line">        <span class="keyword">if</span> (flags &amp; KVM_PGTABLE_WALK_TABLE_POST) &#123;</span><br><span class="line">                ret = kvm_pgtable_visitor_cb(data, addr, level, ptep,</span><br><span class="line">                                             KVM_PGTABLE_WALK_TABLE_POST);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">out:</span><br><span class="line">        <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Page tables are a n-ary tree data structures (512-ary for 4K pages), the page table walker uses recursion to access the tree with options for pre- and post-order traversal. <code>level</code> stands for which level and <code>__kvm_pgtable_visit</code> is responsible for:</p>
+<ol>
+<li><p>calling the callback (<code>cb</code>) at the specified moments</p>
+</li>
+<li><p>steping <code>data→addr</code> to indicate progress</p>
+</li>
+<li><p>calling <code>__kvm_pgtable_walk</code> when the entry points to the next level table</p>
+</li>
+</ol>
+<p>And <code>__kvm_pgtable_walk</code> iterates over the entries in a single page.</p>
+<h2 id="Usage-create-hyp-mappings"><a href="#Usage-create-hyp-mappings" class="headerlink" title="Usage: create_hyp_mappings"></a>Usage: <code>create_hyp_mappings</code></h2><p>Linux runs in EL1 when initializing KVM, it uses <code>create_hyp_mappings</code> to setup the EL2 page tables before entering EL2.</p>
+<p><code>create_hyp_mappings</code> is called in <code>init_hyp_mode</code>, which is a crucial function in KVM initialization. It creates mappings for these areas for EL2.</p>
+<ul>
+<li>EL2 code (<code>__hyp_text_start</code> ~ <code>__hyp_text_end</code>)</li>
+<li>EL2 read only data (<code>__hyp_rodata_start</code> ~ <code>__hyp_rodata_end</code>)</li>
+<li>EL1 read only data (<code>__start_rodata</code> ~ <code>__end_rodata</code>)</li>
+<li>EL2 BSS (<code>__hyp_bss_start</code> ~ <code>__hyp_bss_end</code>)</li>
+<li>EL1 BSS (<code>__hyp_bss_end</code> ~ <code>__bss_stop</code>)</li>
+<li>EL2 stack</li>
+<li>EL2 percpu area</li>
+</ul>
+<blockquote>
+<p>This function only prepares the page tables, does not enter EL2 and start the address translation mechanism.</p>
+</blockquote>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * create_hyp_mappings - duplicate a kernel virtual address range in Hyp mode</span></span><br><span class="line"><span class="comment"> * @from:       The virtual kernel start address of the range</span></span><br><span class="line"><span class="comment"> * @to:         The virtual kernel end address of the range (exclusive)</span></span><br><span class="line"><span class="comment"> * @prot:       The protection to be applied to this range</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * The same virtual address as the kernel virtual address is also used</span></span><br><span class="line"><span class="comment"> * in Hyp-mode mapping (modulo HYP_PAGE_OFFSET) to the same underlying</span></span><br><span class="line"><span class="comment"> * physical pages.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="type">int</span> <span class="title function_">create_hyp_mappings</span><span class="params">(<span class="type">void</span> *from, <span class="type">void</span> *to, <span class="keyword">enum</span> kvm_pgtable_prot prot)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="type">phys_addr_t</span> phys_addr;</span><br><span class="line">        <span class="type">unsigned</span> <span class="type">long</span> virt_addr;</span><br><span class="line">        <span class="comment">// use kern_hyp_va to transform the input EL1 VA into EL2 VA</span></span><br><span class="line">        <span class="type">unsigned</span> <span class="type">long</span> start = kern_hyp_va((<span class="type">unsigned</span> <span class="type">long</span>)from);</span><br><span class="line">        <span class="type">unsigned</span> <span class="type">long</span> end = kern_hyp_va((<span class="type">unsigned</span> <span class="type">long</span>)to);</span><br><span class="line">        <span class="comment">// CPU is EL2 mode? (VHE)</span></span><br><span class="line">        <span class="keyword">if</span> (is_kernel_in_hyp_mode())</span><br><span class="line">                <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">        <span class="comment">// related to pkvm, skip</span></span><br><span class="line">        <span class="keyword">if</span> (!kvm_host_owns_hyp_mappings())</span><br><span class="line">                <span class="keyword">return</span> -EPERM;</span><br><span class="line">        <span class="comment">// align the addresses with the page size</span></span><br><span class="line">        start = start &amp; PAGE_MASK;</span><br><span class="line">        end = PAGE_ALIGN(end);</span><br><span class="line">        <span class="comment">// the loop runs through the input address range (steps one page every iteration),</span></span><br><span class="line">        <span class="comment">// uses kvm_kaddr_to_phys to calculate the corresponding physical address</span></span><br><span class="line">        <span class="comment">// and call __create_hyp_mappings</span></span><br><span class="line">        <span class="keyword">for</span> (virt_addr = start; virt_addr &lt; end; virt_addr += PAGE_SIZE) &#123;</span><br><span class="line">                <span class="type">int</span> err;</span><br><span class="line"></span><br><span class="line">                phys_addr = kvm_kaddr_to_phys(from + virt_addr - start);</span><br><span class="line">                err = __create_hyp_mappings(virt_addr, PAGE_SIZE, phys_addr,</span><br><span class="line">                                            prot);</span><br><span class="line">                <span class="keyword">if</span> (err)</span><br><span class="line">                        <span class="keyword">return</span> err;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>The comments above the function are very helpful. <code>from</code> and <code>to</code> are the EL1 virtual address region to map to EL2, and <code>prot</code> specifies the protection. The interesting part is that EL2 virtual address range is not needed, KVM itself has a mechanism for translating EL1 VAs to EL2 VAs, specifically it uses <code>kern_hyp_va</code> for the translation.</p>
+<h3 id="create-hyp-mappings"><a href="#create-hyp-mappings" class="headerlink" title="__create_hyp_mappings"></a><code>__create_hyp_mappings</code></h3><p>takes the lock <code>kvm_hyp_pgd_mutex</code> then call <code>kvm_pgtable_hyp_map</code>. Note that <code>hyp_pgtable</code> is the <code>kvm_pgtable</code> needed for the walk.</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> __create_hyp_mappings(<span class="type">unsigned</span> <span class="type">long</span> start, <span class="type">unsigned</span> <span class="type">long</span> size,</span><br><span class="line">                          <span class="type">unsigned</span> <span class="type">long</span> phys, <span class="keyword">enum</span> kvm_pgtable_prot prot)</span><br><span class="line">&#123;</span><br><span class="line">        <span class="type">int</span> err;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (WARN_ON(!kvm_host_owns_hyp_mappings()))</span><br><span class="line">                <span class="keyword">return</span> -EINVAL;</span><br><span class="line"> </span><br><span class="line">        mutex_lock(&amp;kvm_hyp_pgd_mutex);</span><br><span class="line">        err = kvm_pgtable_hyp_map(hyp_pgtable, start, size, phys, prot);</span><br><span class="line">        mutex_unlock(&amp;kvm_hyp_pgd_mutex);</span><br><span class="line"> </span><br><span class="line">        <span class="keyword">return</span> err;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="kvm-pgtable-hyp-map"><a href="#kvm-pgtable-hyp-map" class="headerlink" title="kvm_pgtable_hyp_map"></a><code>kvm_pgtable_hyp_map</code></h3><p>Now this function calls the new page table walker <code>kvm_pgtable_walk</code>. It creates and passes the argument <code>kvm_pgtable_walker</code>(1), alongside <code>hyp_pgtable</code>(named <code>pgt</code> here) to <code>kvm_pgtable_walk</code>(2).</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">kvm_pgtable_hyp_map</span><span class="params">(<span class="keyword">struct</span> kvm_pgtable *pgt, u64 addr, u64 size, u64 phys,</span></span><br><span class="line"><span class="params">                        <span class="keyword">enum</span> kvm_pgtable_prot prot)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="type">int</span> ret;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">hyp_map_data</span> <span class="title">map_data</span> =</span> &#123;</span><br><span class="line">                .phys   = ALIGN_DOWN(phys, PAGE_SIZE),</span><br><span class="line">                .mm_ops = pgt-&gt;mm_ops,</span><br><span class="line">        &#125;;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">kvm_pgtable_walker</span> <span class="title">walker</span> =</span> &#123; <span class="comment">// (1)</span></span><br><span class="line">                .cb     = hyp_map_walker,       </span><br><span class="line">                .flags  = KVM_PGTABLE_WALK_LEAF,</span><br><span class="line">                .arg    = &amp;map_data,</span><br><span class="line">        &#125;;</span><br><span class="line"></span><br><span class="line">        ret = hyp_set_prot_attr(prot, &amp;map_data.attr);</span><br><span class="line">        <span class="keyword">if</span> (ret)</span><br><span class="line">                <span class="keyword">return</span> ret;</span><br><span class="line"></span><br><span class="line">        ret = kvm_pgtable_walk(pgt, addr, size, &amp;walker); <span class="comment">// (2)</span></span><br><span class="line">        dsb(ishst);</span><br><span class="line">        isb();</span><br><span class="line">        <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>As the <code>cb</code> and set up to only run when visiting leaf nodes (<code>flags: KVM_PGTABLE_WALK_LEAF</code>), <code>hyp_map_walker</code> allocates pages for each level of the page table and installs the addresses in the corresponding entries.</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Foreword"><span class="top-box-text">Foreword</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Important-Structures"><span class="top-box-text">Important Structures</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable"><span class="top-box-text">kvm_pgtable</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walker"><span class="top-box-text">kvm_pgtable_walker</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walk-data"><span class="top-box-text">kvm_pgtable_walk_data</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Implementation-of-the-New-Walker"><span class="top-box-text">Implementation of the New Walker</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walk"><span class="top-box-text">kvm_pgtable_walk</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walk-1"><span class="top-box-text">_kvm_pgtable_walk</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-walk-2"><span class="top-box-text">__kvm_pgtable_walk</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-visit"><span class="top-box-text">__kvm_pgtable_visit</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Usage-create-hyp-mappings"><span class="top-box-text">Usage: create_hyp_mappings</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#create-hyp-mappings"><span class="top-box-text">__create_hyp_mappings</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#kvm-pgtable-hyp-map"><span class="top-box-text">kvm_pgtable_hyp_map</span></a></li></ol></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/kvm_pgtable/">
+          <h3 class="post-title">
+            Next: KVM ARM: 新 page table walker
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Linux Interrupt Subsystem Intro (2): Interrupt Handling Process</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Linux Interrupt Subsystem Intro (2): Interrupt Handling Process, blog keywords">
+<meta name="description" content="
+Linux version: v6.0
+Architecture: ARMv8
+
+This post is the continuation of Linux Interrupt Subsystem Intro(1): Interrupt">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Linux Interrupt Subsystem Intro (2): Interrupt Handling Process</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2024-03-24</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/interrupt/">
+              interrupt
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux version: v6.0</p>
+<p>Architecture: ARMv8</p>
+</blockquote>
+<p>This post is the continuation of <a href="../interrupt1_en/">Linux Interrupt Subsystem Intro(1): Interrupt Handling Initialization</a>.</p>
+<h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><p>I’m surprised almost half a year had pasted since my last post… I got sidetracked by researching other things in between, so I’ve been leaving this gap unfilled. Now coming back to it I feel a bit rusty. Indeed, when there’s something I want to write about, it is better do it promptly.</p>
+<p>The basic architecture of Linux’s interrupt handling and the preparation is introduced last time, including setting up interrupt handlers: <code>handle_arch_irq</code> , <code>irq_desc→handle_irq</code> , <code>irqaction→handler</code> . Let’s see how they are invoked when an interrupt is serviced.</p>
+<h2 id="Interrupt-Handling-Process"><a href="#Interrupt-Handling-Process" class="headerlink" title="Interrupt Handling Process"></a>Interrupt Handling Process</h2><p>PC jumps to the IRQ vector in the CPU’s exception vectors when and IPI comes:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// arch/arm64/kernel/entry.S</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * Exception vectors.                                      </span></span><br><span class="line"><span class="comment"> */</span>                                                               </span><br><span class="line">        .pushsection <span class="string">&quot;.entry.text&quot;</span>, <span class="string">&quot;ax&quot;</span></span><br><span class="line"></span><br><span class="line">        .align  <span class="number">11</span></span><br><span class="line">SYM_CODE_START(vectors)</span><br><span class="line">        kernel_ventry   <span class="number">1</span>, t, <span class="number">64</span>, sync          <span class="comment">// Synchronous EL1t</span></span><br><span class="line">        kernel_ventry   <span class="number">1</span>, t, <span class="number">64</span>, irq           <span class="comment">// IRQ EL1t</span></span><br><span class="line">        kernel_ventry   <span class="number">1</span>, t, <span class="number">64</span>, fiq           <span class="comment">// FIQ EL1t</span></span><br><span class="line">        kernel_ventry   <span class="number">1</span>, t, <span class="number">64</span>, error         <span class="comment">// Error EL1t</span></span><br><span class="line"></span><br><span class="line">        kernel_ventry   <span class="number">1</span>, h, <span class="number">64</span>, sync          <span class="comment">// Synchronous EL1h</span></span><br><span class="line">        kernel_ventry   <span class="number">1</span>, h, <span class="number">64</span>, irq           <span class="comment">// IRQ EL1h</span></span><br><span class="line">        kernel_ventry   <span class="number">1</span>, h, <span class="number">64</span>, fiq           <span class="comment">// FIQ EL1h</span></span><br><span class="line">        kernel_ventry   <span class="number">1</span>, h, <span class="number">64</span>, error         <span class="comment">// Error EL1h</span></span><br><span class="line"></span><br><span class="line">        kernel_ventry   <span class="number">0</span>, t, <span class="number">64</span>, sync          <span class="comment">// Synchronous 64-bit EL0</span></span><br><span class="line">        kernel_ventry   <span class="number">0</span>, t, <span class="number">64</span>, irq           <span class="comment">// IRQ 64-bit EL0</span></span><br><span class="line">        kernel_ventry   <span class="number">0</span>, t, <span class="number">64</span>, fiq           <span class="comment">// FIQ 64-bit EL0</span></span><br><span class="line">        kernel_ventry   <span class="number">0</span>, t, <span class="number">64</span>, error         <span class="comment">// Error 64-bit EL0</span></span><br><span class="line"></span><br><span class="line">        kernel_ventry   <span class="number">0</span>, t, <span class="number">32</span>, sync          <span class="comment">// Synchronous 32-bit EL0</span></span><br><span class="line">        kernel_ventry   <span class="number">0</span>, t, <span class="number">32</span>, irq           <span class="comment">// IRQ 32-bit EL0</span></span><br><span class="line">        kernel_ventry   <span class="number">0</span>, t, <span class="number">32</span>, fiq           <span class="comment">// FIQ 32-bit EL0</span></span><br><span class="line">        kernel_ventry   <span class="number">0</span>, t, <span class="number">32</span>, error         <span class="comment">// Error 32-bit EL0</span></span><br><span class="line">SYM_CODE_END(vectors)</span><br></pre></td></tr></table></figure>
+
+<p><code>kernel_ventry</code> is an assembly macro:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">        .macro kernel_ventry, el:req, ht:req, regsize:req, label:req</span><br><span class="line">        .align <span class="number">7</span></span><br><span class="line"></span><br><span class="line">        [...] <span class="comment">// some complex initial preparations</span></span><br><span class="line">        <span class="comment">// reserve space on the stack for saving registers</span></span><br><span class="line">        sub     sp, sp, #PT_REGS_SIZE</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> CONFIG_VMAP_STACK</span></span><br><span class="line"></span><br><span class="line">        [...] <span class="comment">// SP overflow check and handling</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">        b       el\el\ht\()_\regsize\()_\label</span><br><span class="line">.org .Lventry_start\@ + <span class="number">128</span>     <span class="comment">// Did we overflow the ventry slot?</span></span><br><span class="line">        .endm</span><br></pre></td></tr></table></figure>
+
+<p>the last instruction is a branch instruction, if we assume the CPU is in AArch64 EL0 when the interrupt arrives,</p>
+<p><code>b       el\el\ht\()_\regsize\()_\label</code> expands into</p>
+<p><code>b        el0t_64_irq</code></p>
+<p><code>el0t_64_irq</code> is defined in the same file, and is also generated by macros:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// arch/arm64/kernel/entry.S</span></span><br><span class="line"></span><br><span class="line">        .macro entry_handler el:req, ht:req, regsize:req, label:req</span><br><span class="line"><span class="title function_">SYM_CODE_START_LOCAL</span><span class="params">(el\el\ht\()_\regsize\()_\label)</span></span><br><span class="line">        kernel_entry \el, \regsize</span><br><span class="line">        mov     x0, sp</span><br><span class="line">        bl      el\el\ht\<span class="params">()</span>_\regsize\<span class="params">()</span>_\label\<span class="params">()</span>_handler</span><br><span class="line">        .<span class="keyword">if</span> \el == <span class="number">0</span></span><br><span class="line">        b       ret_to_user</span><br><span class="line">        .<span class="keyword">else</span></span><br><span class="line">        b       ret_to_kernel</span><br><span class="line">        .endif</span><br><span class="line">SYM_CODE_END(el\el\ht\()_\regsize\()_\label)</span><br><span class="line">        .endm</span><br><span class="line"></span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * Early exception handlers</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line">        entry_handler   <span class="number">1</span>, t, <span class="number">64</span>, sync</span><br><span class="line">        entry_handler   <span class="number">1</span>, t, <span class="number">64</span>, irq</span><br><span class="line">        entry_handler   <span class="number">1</span>, t, <span class="number">64</span>, fiq</span><br><span class="line">        entry_handler   <span class="number">1</span>, t, <span class="number">64</span>, error</span><br><span class="line"></span><br><span class="line">        entry_handler   <span class="number">1</span>, h, <span class="number">64</span>, sync</span><br><span class="line">        entry_handler   <span class="number">1</span>, h, <span class="number">64</span>, irq</span><br><span class="line">        entry_handler   <span class="number">1</span>, h, <span class="number">64</span>, fiq</span><br><span class="line">        entry_handler   <span class="number">1</span>, h, <span class="number">64</span>, error</span><br><span class="line"></span><br><span class="line">        entry_handler   <span class="number">0</span>, t, <span class="number">64</span>, sync</span><br><span class="line">        entry_handler   <span class="number">0</span>, t, <span class="number">64</span>, irq</span><br><span class="line">        entry_handler   <span class="number">0</span>, t, <span class="number">64</span>, fiq</span><br><span class="line">        entry_handler   <span class="number">0</span>, t, <span class="number">64</span>, error</span><br><span class="line"></span><br><span class="line">        entry_handler   <span class="number">0</span>, t, <span class="number">32</span>, sync</span><br><span class="line">        entry_handler   <span class="number">0</span>, t, <span class="number">32</span>, irq</span><br><span class="line">        entry_handler   <span class="number">0</span>, t, <span class="number">32</span>, fiq</span><br><span class="line">        entry_handler   <span class="number">0</span>, t, <span class="number">32</span>, error</span><br></pre></td></tr></table></figure>
+
+<p>focus on <code>entry_handler   0, t, 64, irq</code> it expands into</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">SYM_CODE_START_LOCAL(el0t_64_irq)</span><br><span class="line">        kernel_entry <span class="number">0</span>, <span class="number">64</span></span><br><span class="line">        mov     x0, sp</span><br><span class="line">        bl      el0t_64_irq_handler</span><br><span class="line">        b       ret_to_user</span><br><span class="line">        .endif</span><br><span class="line"><span class="title function_">SYM_CODE_END</span><span class="params">(el0t_64_irq)</span></span><br></pre></td></tr></table></figure>
+
+<p>continue: see the comments added</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// arch/arm64/kernel/entry-common.c</span></span><br><span class="line"><span class="comment">// please read from the last function in this block</span></span><br><span class="line"><span class="comment">// since the functions are called bottom to top, with the</span></span><br><span class="line"><span class="comment">// last being do_interrupt_handler</span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">do_interrupt_handler</span><span class="params">(<span class="keyword">struct</span> pt_regs *regs,</span></span><br><span class="line"><span class="params">                                 <span class="type">void</span> (*handler)(<span class="keyword">struct</span> pt_regs *))</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">pt_regs</span> *<span class="title">old_regs</span> =</span> set_irq_regs(regs);</span><br><span class="line"></span><br><span class="line">        <span class="comment">// change stack if necessary，but calls </span></span><br><span class="line">        <span class="comment">// handle_arch_irq (gic_handle_irq) either way</span></span><br><span class="line">        <span class="keyword">if</span> (on_thread_stack())</span><br><span class="line">                call_on_irq_stack(regs, handler);</span><br><span class="line">        <span class="keyword">else</span></span><br><span class="line">                handler(regs);</span><br><span class="line"></span><br><span class="line">        set_irq_regs(old_regs);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> noinstr <span class="title function_">el0_interrupt</span><span class="params">(<span class="keyword">struct</span> pt_regs *regs,</span></span><br><span class="line"><span class="params">                                  <span class="type">void</span> (*handler)(<span class="keyword">struct</span> pt_regs *))</span></span><br><span class="line">&#123;</span><br><span class="line">        enter_from_user_mode(regs);</span><br><span class="line"></span><br><span class="line">        write_sysreg(DAIF_PROCCTX_NOIRQ, daif);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (regs-&gt;pc &amp; BIT(<span class="number">55</span>))</span><br><span class="line">                arm64_apply_bp_hardening();</span><br><span class="line"></span><br><span class="line">        irq_enter_rcu();</span><br><span class="line">        <span class="comment">// this is the important part</span></span><br><span class="line">        do_interrupt_handler(regs, handler);</span><br><span class="line">        irq_exit_rcu();</span><br><span class="line"></span><br><span class="line">        exit_to_user_mode(regs);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> noinstr __el0_irq_handler_common(<span class="keyword">struct</span> pt_regs *regs)</span><br><span class="line">&#123;</span><br><span class="line">        <span class="comment">// use the function we set in part 1 (handle_arch_irq)</span></span><br><span class="line">        el0_interrupt(regs, handle_arch_irq);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">asmlinkage <span class="type">void</span> noinstr <span class="title function_">el0t_64_irq_handler</span><span class="params">(<span class="keyword">struct</span> pt_regs *regs)</span></span><br><span class="line">&#123;</span><br><span class="line">        __el0_irq_handler_common(regs);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>now let’s look at <code>gic_handle_irq</code> :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> __exception_irq_entry <span class="title function_">gic_handle_irq</span><span class="params">(<span class="keyword">struct</span> pt_regs *regs)</span></span><br><span class="line">&#123;</span><br><span class="line">        u32 irqstat, irqnr;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">gic_chip_data</span> *<span class="title">gic</span> =</span> &amp;gic_data[<span class="number">0</span>];</span><br><span class="line">        <span class="type">void</span> __iomem *cpu_base = gic_data_cpu_base(gic);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">do</span> &#123;</span><br><span class="line">                <span class="comment">// read GICC_IAR</span></span><br><span class="line">                irqstat = readl_relaxed(cpu_base + GIC_CPU_INTACK);</span><br><span class="line">                <span class="comment">// extract the hw irq number</span></span><br><span class="line">                irqnr = irqstat &amp; GICC_IAR_INT_ID_MASK;</span><br><span class="line">                <span class="comment">// GIC sets the irqnr to 1023 if there is no interrupt to be serviced,</span></span><br><span class="line">                <span class="comment">// therefore this loop keeps servicing interrupts until none is left</span></span><br><span class="line">                <span class="keyword">if</span> (unlikely(irqnr &gt;= <span class="number">1020</span>))</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">                <span class="comment">// skip</span></span><br><span class="line">                <span class="keyword">if</span> (static_branch_likely(&amp;supports_deactivate_key))</span><br><span class="line">                        writel_relaxed(irqstat, cpu_base + GIC_CPU_EOI);</span><br><span class="line">                isb();</span><br><span class="line"></span><br><span class="line">                <span class="comment">/*</span></span><br><span class="line"><span class="comment">                 * Ensure any shared data written by the CPU sending the IPI</span></span><br><span class="line"><span class="comment">                 * is read after we&#x27;ve read the ACK register on the GIC.</span></span><br><span class="line"><span class="comment">                 *</span></span><br><span class="line"><span class="comment">                 * Pairs with the write barrier in gic_ipi_send_mask</span></span><br><span class="line"><span class="comment">                 */</span></span><br><span class="line">                <span class="comment">// inqnr &lt;= 15 means it is an IPI (called SGI in GIC spec)</span></span><br><span class="line">                <span class="keyword">if</span> (irqnr &lt;= <span class="number">15</span>) &#123;</span><br><span class="line">                        smp_rmb();</span><br><span class="line"></span><br><span class="line">                        <span class="comment">/*</span></span><br><span class="line"><span class="comment">                         * The GIC encodes the source CPU in GICC_IAR,</span></span><br><span class="line"><span class="comment">                         * leading to the deactivation to fail if not</span></span><br><span class="line"><span class="comment">                         * written back as is to GICC_EOI.  Stash the INTID</span></span><br><span class="line"><span class="comment">                         * away for gic_eoi_irq() to write back.  This only</span></span><br><span class="line"><span class="comment">                         * works because we don&#x27;t nest SGIs...</span></span><br><span class="line"><span class="comment">                         */</span></span><br><span class="line">                        <span class="comment">// save the value of GICC_IAR, needed for EOI write</span></span><br><span class="line">                        this_cpu_write(sgi_intid, irqstat);</span><br><span class="line">                &#125;</span><br><span class="line"></span><br><span class="line">                generic_handle_domain_irq(gic-&gt;domain, irqnr);</span><br><span class="line">        &#125; <span class="keyword">while</span> (<span class="number">1</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * generic_handle_domain_irq - Invoke the handler for a HW irq belonging</span></span><br><span class="line"><span class="comment"> *                             to a domain.</span></span><br><span class="line"><span class="comment"> * @domain:     The domain where to perform the lookup</span></span><br><span class="line"><span class="comment"> * @hwirq:      The HW irq number to convert to a logical one</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Returns:     0 on success, or -EINVAL if conversion has failed</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> *              This function must be called from an IRQ context with irq regs</span></span><br><span class="line"><span class="comment"> *              initialized.</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="type">int</span> <span class="title function_">generic_handle_domain_irq</span><span class="params">(<span class="keyword">struct</span> irq_domain *domain, <span class="type">unsigned</span> <span class="type">int</span> hwirq)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="comment">// irq_resolve_mapping uses domain-&gt;revmap to translate hardware IRQ number</span></span><br><span class="line">        <span class="comment">// into Linux IRQ number</span></span><br><span class="line">        <span class="keyword">return</span> handle_irq_desc(irq_resolve_mapping(domain, hwirq));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">handle_irq_desc</span><span class="params">(<span class="keyword">struct</span> irq_desc *desc)</span></span><br><span class="line">&#123;</span><br><span class="line">        [...]</span><br><span class="line">        generic_handle_irq_desc(desc);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">void</span> <span class="title function_">generic_handle_irq_desc</span><span class="params">(<span class="keyword">struct</span> irq_desc *desc)</span>  </span><br><span class="line">&#123;  </span><br><span class="line">        desc-&gt;handle_irq(desc);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>as in the last post, <code>desc→handle_irq</code> points to <code>handle_percpu_devid_irq</code></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * handle_percpu_devid_irq - Per CPU local irq handler with per cpu dev ids</span></span><br><span class="line"><span class="comment"> * @desc:       the interrupt description structure for this irq</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Per CPU interrupts on SMP machines without locking requirements. Same as</span></span><br><span class="line"><span class="comment"> * handle_percpu_irq() above but with the following extras:</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * action-&gt;percpu_dev_id is a pointer to percpu variables which</span></span><br><span class="line"><span class="comment"> * contain the real device id for the cpu on which this handler is</span></span><br><span class="line"><span class="comment"> * called</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">handle_percpu_devid_irq</span><span class="params">(<span class="keyword">struct</span> irq_desc *desc)</span></span><br><span class="line">&#123;</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">irq_chip</span> *<span class="title">chip</span> =</span> irq_desc_get_chip(desc);</span><br><span class="line">        <span class="class"><span class="keyword">struct</span> <span class="title">irqaction</span> *<span class="title">action</span> =</span> desc-&gt;action;</span><br><span class="line">        <span class="type">unsigned</span> <span class="type">int</span> irq = irq_desc_get_irq(desc);</span><br><span class="line">        <span class="type">irqreturn_t</span> res;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/*</span></span><br><span class="line"><span class="comment">         * PER CPU interrupts are not serialized. Do not touch</span></span><br><span class="line"><span class="comment">         * desc-&gt;tot_count.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        __kstat_incr_irqs_this_cpu(desc);</span><br><span class="line"></span><br><span class="line">        <span class="comment">// GIC does not have a irq_ack callback</span></span><br><span class="line">        <span class="comment">// (reading hwirq also acks the interrupt)</span></span><br><span class="line">        <span class="keyword">if</span> (chip-&gt;irq_ack)</span><br><span class="line">                chip-&gt;irq_ack(&amp;desc-&gt;irq_data);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (likely(action)) &#123;</span><br><span class="line">                trace_irq_handler_entry(irq, action);</span><br><span class="line">                <span class="comment">// call the registered handler in request_percpu_irq (ipi_handler)</span></span><br><span class="line">                res = action-&gt;handler(irq, raw_cpu_ptr(action-&gt;percpu_dev_id));</span><br><span class="line">                trace_irq_handler_exit(irq, action, res);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                <span class="type">unsigned</span> <span class="type">int</span> cpu = smp_processor_id();</span><br><span class="line">                <span class="type">bool</span> enabled = cpumask_test_cpu(cpu, desc-&gt;percpu_enabled);</span><br><span class="line"></span><br><span class="line">                <span class="keyword">if</span> (enabled)</span><br><span class="line">                        irq_percpu_disable(desc, cpu);</span><br><span class="line"></span><br><span class="line">                pr_err_once(<span class="string">&quot;Spurious%s percpu IRQ%u on CPU%u\n&quot;</span>,</span><br><span class="line">                            enabled ? <span class="string">&quot; and unmasked&quot;</span> : <span class="string">&quot;&quot;</span>, irq, cpu);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// tell GIC it is the end of interrupt (EOI)</span></span><br><span class="line">        <span class="comment">// writes the hwirq number into the EOI register</span></span><br><span class="line">        <span class="keyword">if</span> (chip-&gt;irq_eoi)</span><br><span class="line">                chip-&gt;irq_eoi(&amp;desc-&gt;irq_data);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>And that’s it! EZPZ, right?</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Introduction"><span class="top-box-text">Introduction</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Interrupt-Handling-Process"><span class="top-box-text">Interrupt Handling Process</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/interrupt2/">
+          <h3 class="post-title">
+            Next: Linux中斷子系統簡介(2): 中斷處理流程執行
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

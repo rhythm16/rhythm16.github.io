@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>KVM ARM: EL2 per cpu variable(1): Definition &amp; Usage</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="KVM ARM: EL2 per cpu variable(1): Definition &amp; Usage, blog keywords">
+<meta name="description" content="
+Linux version: v6.0
+Architecture: ARMv8
+KVM flavor: NVHE
+
+IntroductionDuring the 5.10 release cycle, KVM ARM had many c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">KVM ARM: EL2 per cpu variable(1): Definition &amp; Usage</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2022-11-16</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KVM/">
+              KVM
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/per-cpu-variables/">
+              per cpu variables
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Linux version: v6.0</p>
+<p>Architecture: ARMv8</p>
+<p>KVM flavor: NVHE</p>
+</blockquote>
+<h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><p>During the 5.10 release cycle, KVM ARM had many code improvements in preparation for the <a target="_blank" rel="noopener" href="https://www.youtube.com/watch?v=wY-u6n75iXc">google pkvm</a> project. This includes the EL2 per cpu variables. Because there are quite a lot to discuss, I decided to split this topic into two posts.</p>
+<ol>
+<li><p>Definition &amp; Usage</p>
+</li>
+<li><p>per cpu variable initialization</p>
+</li>
+</ol>
+<p>Besides these there are still many related aspects such as barriers, preemption, and interrupts. We’re not going to talk about them here, since I don’t think I have a solid enough understanding.</p>
+<h3 id="Per-CPU-Variables"><a href="#Per-CPU-Variables" class="headerlink" title="Per CPU Variables"></a>Per CPU Variables</h3><p>Per CPU variables are simply variables that each CPU core sees a local copy. Upon access, the copy belonging to the running cpu is accessed, this eliminates inter-cpu data races.</p>
+<p>There are already a lot of resources on Linux kernel’s per cpu variables online, this series of posts will focus on KVM ARM’s per cpu variable implementation catered for the EL2 environment.</p>
+<h2 id="Definition"><a href="#Definition" class="headerlink" title="Definition"></a>Definition</h2><p>The API to define a EL2 per cpu variable is the same as the normal one. Here’s an example:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// file: arch/arm64/kvm/hyp/nvhe/switch.c</span></span><br><span class="line">DEFINE_PER_CPU(<span class="type">unsigned</span> <span class="type">long</span>, kvm_hyp_vector);</span><br></pre></td></tr></table></figure>
+
+<p>This macro expands into:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">__attribute__((section(<span class="string">&quot;.data..percpu&quot;</span> <span class="string">&quot;&quot;</span>))) __typeof__(<span class="type">unsigned</span> <span class="type">long</span>) kvm_hyp_vector;</span><br></pre></td></tr></table></figure>
+
+<p>This result is also the same as the regular per cpu variable. So, does EL2 and EL1 use the same section for per cpu variables? The answer is no, code written for KVM EL2 are linked using a special linker script <code>arch/arm64/kvm/hyp/nvhe/hyp.lds</code>. This linker script renames the input sections, effectively seperating the kernel and the hypervisor.</p>
+<blockquote>
+<p>You’ll find that <code>hyp.lds</code> does not apper in the source code, this is becuase <code>hyp.lds</code> is generated at compile time from <code>hyp.lds.S</code> in the same directory.</p>
+</blockquote>
+<p>This is the <code>hyp.lds</code> generated using <code>defconfig</code>:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">SECTIONS &#123;</span><br><span class="line">    .hyp.idmap.text : &#123;</span><br><span class="line">        __hyp_section_.hyp.idmap.text = .;</span><br><span class="line">        *(.idmap.text .idmap.text.*)</span><br><span class="line">    &#125;</span><br><span class="line">    .hyp.text : &#123;</span><br><span class="line">        __hyp_section_.hyp.text = .;</span><br><span class="line">        *(.text .text.*)</span><br><span class="line">    &#125;</span><br><span class="line">    .hyp.data..ro_after_init : &#123;</span><br><span class="line">        __hyp_section_.hyp.data..ro_after_init = .;</span><br><span class="line">        *(.data..ro_after_init .data..ro_after_init.*)</span><br><span class="line">    &#125;</span><br><span class="line">    .hyp.rodata : &#123;</span><br><span class="line">        __hyp_section_.hyp.rodata = .;</span><br><span class="line">        *(.rodata .rodata.*)</span><br><span class="line">    &#125;</span><br><span class="line">    . = ALIGN((<span class="number">1</span> &lt;&lt; <span class="number">12</span>));</span><br><span class="line">    .hyp.data..percpu : &#123;</span><br><span class="line">        __hyp_section_.hyp.data..percpu = .;</span><br><span class="line">        __per_cpu_start = .;</span><br><span class="line">        *(.data..percpu..first)</span><br><span class="line">        . = ALIGN((<span class="number">1</span> &lt;&lt; <span class="number">12</span>));</span><br><span class="line">        *(.data..percpu..page_aligned)</span><br><span class="line">        . = ALIGN((<span class="number">1</span> &lt;&lt; (<span class="number">6</span>)));</span><br><span class="line">        *(.data..percpu..read_mostly)</span><br><span class="line">        . = ALIGN((<span class="number">1</span> &lt;&lt; (<span class="number">6</span>)));</span><br><span class="line">        *(.data..percpu)</span><br><span class="line">        *(.data..percpu..shared_aligned)</span><br><span class="line">        __per_cpu_end = .;</span><br><span class="line">    &#125;</span><br><span class="line">    .hyp.bss : &#123;</span><br><span class="line">        __hyp_section_.hyp.bss = .;</span><br><span class="line">        *(.bss .bss.*)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Note that <code>kvm_hyp_vector</code> used in the previous example is moved from <code>.data..percpu</code> section to <code>.hyp.data..percpu</code>.</p>
+<h2 id="Usage"><a href="#Usage" class="headerlink" title="Usage"></a>Usage</h2><p>Here’s a per cpu variable usage example:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// file: arch/arm64/kvm/hyp/nvhe/switch.c</span></span><br><span class="line">write_sysreg(this_cpu_ptr(&amp;kvm_init_params)-&gt;hcr_el2, hcr_el2);</span><br></pre></td></tr></table></figure>
+
+<p><code>this_cpu_ptr(&amp;var)</code> returns the address of the per cpu variable <code>var</code>.</p>
+<p>Lots of recursive macro is used in this line of code, it expands into (just skim through it):</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">do</span> &#123;</span><br><span class="line">    u64 __val =</span><br><span class="line">        (u64)(</span><br><span class="line">            (</span><br><span class="line">                &#123;</span><br><span class="line">                    <span class="keyword">do</span> &#123;</span><br><span class="line">                        <span class="type">const</span> <span class="type">void</span> *__vpp_verify = (typeof((&amp;kvm_init_params) + <span class="number">0</span>))((<span class="type">void</span> *)<span class="number">0</span>);</span><br><span class="line">                        (<span class="type">void</span>)__vpp_verify;</span><br><span class="line">                    &#125; <span class="keyword">while</span> (<span class="number">0</span>);</span><br><span class="line">                    (</span><br><span class="line">                        &#123;</span><br><span class="line">                            <span class="type">unsigned</span> <span class="type">long</span> __ptr;          </span><br><span class="line">                            __asm__ (<span class="string">&quot;&quot;</span> : <span class="string">&quot;=r&quot;</span>(__ptr) : <span class="string">&quot;0&quot;</span>((typeof(*(&amp;kvm_init_params)) *)(&amp;kvm_init_params)));</span><br><span class="line">                            (typeof((typeof(*(&amp;kvm_init_params)) *)(&amp;kvm_init_params))) (__ptr + ((__hyp_my_cpu_offset())));</span><br><span class="line">                        &#125;</span><br><span class="line">                    );</span><br><span class="line">                &#125;</span><br><span class="line">            )-&gt;hcr_el2</span><br><span class="line">        );</span><br><span class="line">        <span class="keyword">asm</span> <span class="title function_">volatile</span><span class="params">(<span class="string">&quot;msr &quot;</span> <span class="string">&quot;hcr_el2&quot;</span> <span class="string">&quot;, %x0&quot;</span> : : <span class="string">&quot;rZ&quot;</span> (__val))</span>;</span><br><span class="line">&#125; <span class="keyword">while</span> (<span class="number">0</span>);</span><br></pre></td></tr></table></figure>
+
+<p>We’re not interested in <code>write_sysreg()</code> and <code>hcr_el2</code>, remove them:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// macro expansion of this_cpu_ptr(&amp;kvm_init_params):</span></span><br><span class="line">(</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="comment">// this do-while(0) is used to statically check whether the input kvm_init_params</span></span><br><span class="line">        <span class="comment">// is a per cpu variable or not, skip for now</span></span><br><span class="line">        <span class="keyword">do</span> &#123;</span><br><span class="line">            <span class="type">const</span> <span class="type">void</span> *__vpp_verify = (typeof((&amp;kvm_init_params) + <span class="number">0</span>))((<span class="type">void</span> *)<span class="number">0</span>);</span><br><span class="line">            (<span class="type">void</span>)__vpp_verify;</span><br><span class="line">        &#125; <span class="keyword">while</span> (<span class="number">0</span>);</span><br><span class="line">        (</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="type">unsigned</span> <span class="type">long</span> __ptr;</span><br><span class="line">                <span class="comment">// basically means __ptr = (unsigned long)&amp;kvm_init_params</span></span><br><span class="line">                __asm__ (<span class="string">&quot;&quot;</span> : <span class="string">&quot;=r&quot;</span>(__ptr) : <span class="string">&quot;0&quot;</span>((typeof(*(&amp;kvm_init_params)) *)(&amp;kvm_init_params)));</span><br><span class="line">                <span class="comment">// return __ptr + __hyp_my_cpu_offset()</span></span><br><span class="line">                (typeof((typeof(*(&amp;kvm_init_params)) *)(&amp;kvm_init_params))) (__ptr + ((__hyp_my_cpu_offset())));</span><br><span class="line">            &#125;</span><br><span class="line">        );</span><br><span class="line">    &#125;</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>You can see that the basic mechanism behind per cpu variables is taking a base pointer and then add a cpu-specific offset to get the local copy’s address.</p>
+<p><code>__hyp_my_cpu_offset()</code>’s implementation:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="keyword">inline</span> <span class="type">unsigned</span> <span class="type">long</span> __hyp_my_cpu_offset(<span class="type">void</span>)</span><br><span class="line">&#123;</span><br><span class="line">        <span class="comment">/* </span></span><br><span class="line"><span class="comment">         * Non-VHE hyp code runs with preemption disabled. No need to hazard</span></span><br><span class="line"><span class="comment">         * the register access against barrier() as in __kern_my_cpu_offset.</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="keyword">return</span> read_sysreg(tpidr_el2);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>It reads <code>tpidr_el2</code> to get the per cpu offset. <code>tpidr_el2</code> is a system register which hardware doesn’t use, software can use it as it sees fit. KVM ARM uses it to store the per cpu offset for each cpu.</p>
+<p>Lastly lets look at how per cpu variables are used in assembly:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// file: arch/arm64/kvm/hyp/nvhe/host.S</span></span><br><span class="line">get_host_ctxt  x0, x1</span><br></pre></td></tr></table></figure>
+
+<p>This is also a macro, it places the address of the per cpu variable <code>struct kvm_host_data kvm_host_data</code> into <code>x0</code>, <code>x1</code> is a temporary register. The macro expands into:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// the first two instructions read the address of kvm_host_data (base)</span></span><br><span class="line"><span class="comment">// in a pc relative way</span></span><br><span class="line"><span class="comment">// 1. load kvm_host_data&#x27;s address&#x27;s higher bits ([:12]) into x1</span></span><br><span class="line">adrp    x1, kvm_host_data</span><br><span class="line"><span class="comment">// 2. x0 = ((&amp;kvm_host_data)[11:0] + x1), creating the complete address</span></span><br><span class="line">add     x0, x1, #:lo12:kvm_host_data</span><br><span class="line"><span class="comment">// read tpidr_el2</span></span><br><span class="line">mrs     x1, tpidr_el2</span><br><span class="line"><span class="comment">// kvm_host_data + tpidr_el2 = address of the per cpu kvm_host_data</span></span><br><span class="line">add     x0, x0, x1</span><br><span class="line">add     x0, x0, #<span class="number">0</span></span><br></pre></td></tr></table></figure>
+
+<p>It uses <code>tpidr_el2</code> as the offset, just like the C implementation.</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Introduction"><span class="top-box-text">Introduction</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Per-CPU-Variables"><span class="top-box-text">Per CPU Variables</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Definition"><span class="top-box-text">Definition</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Usage"><span class="top-box-text">Usage</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/percpu/">
+          <h3 class="post-title">
+            Next: KVM ARM: EL2 per cpu變數(1): 定義及存取
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+

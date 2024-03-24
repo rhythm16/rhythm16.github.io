@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Makefile Notes</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Makefile Notes, blog keywords">
+<meta name="description" content="My notes for the Makefile file used by the make utility.
+AssignmentsThe simplest = will expand recursively when the LHS ">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Makefile Notes</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2021-06-22</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/make/">
+              make
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <p>My notes for the <code>Makefile</code> file used by the <code>make</code> utility.</p>
+<h2 id="Assignments"><a href="#Assignments" class="headerlink" title="Assignments"></a>Assignments</h2><p>The simplest <code>=</code> will expand recursively when the LHS is used</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">a = &quot;1&quot;</span><br><span class="line">b = &quot;2&quot;</span><br><span class="line">c = $(a)3 # c is now &quot;13&quot;</span><br><span class="line">a = &quot;4&quot;   # c is now &quot;43&quot;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<p><code>:=</code> will expand and lock-in the resulting value when it assigns</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">a = &quot;1&quot;</span><br><span class="line">b = &quot;2&quot;</span><br><span class="line">c := $(a)3 # c will remain &quot;13&quot;</span><br><span class="line">a = &quot;4&quot;    # c is still &quot;13&quot;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<p><code>?=</code> will assign only if the LHS is not assigned to anything</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">a = &quot;1&quot;</span><br><span class="line">a ?= &quot;2&quot; # a is still &quot;1&quot;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="Magic-variables"><a href="#Magic-variables" class="headerlink" title="Magic variables"></a>Magic variables</h2><ul>
+<li><code>$@</code>: target</li>
+<li><code>$&lt;</code>: the first prerequisite</li>
+<li><code>$^</code>: list of all prerequisite</li>
+<li><code>$*</code>: stem with which the implicit rule matches (“foo” in “foo.c”)</li>
+<li><code>$(@D)</code>: target directory</li>
+</ul>
+<h2 id="Basic-implicit-rule"><a href="#Basic-implicit-rule" class="headerlink" title="Basic implicit rule"></a>Basic implicit rule</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">%.o: %.c</span><br><span class="line">    command</span><br></pre></td></tr></table></figure>
+<p>means every <code>*.o</code> file seen in the make process is added a dependency <code>*.c</code>, recipe is given in <code>command</code></p>
+<h2 id="List-generation"><a href="#List-generation" class="headerlink" title="List generation"></a>List generation</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">C_FILES = $(wildcard $(SRC_DIR)/*.c)</span><br></pre></td></tr></table></figure>
+<p>produces a list <code>C_FILES</code> which contains all the <code>*.c</code> files in <code>$(SRC_DIR)</code></p>
+<h2 id="List-mapping"><a href="#List-mapping" class="headerlink" title="List mapping"></a>List mapping</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">OBJ_FILES = $(C_FILES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%_c.o)</span><br></pre></td></tr></table></figure>
+<p><code>OBJ_FILES</code> is produced by mapping every item in <code>C_FILES</code> from <code>$(SRC_DIR/%.c</code> to <code>$(BUILD_DIR)/%_c.o</code></p>
+<h2 id="Including-files"><a href="#Including-files" class="headerlink" title="Including files"></a>Including files</h2><p>Simply use <code>include</code></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">include myrule.file</span><br></pre></td></tr></table></figure>
+<p>or use <code>-include</code> to not do anything if the file doesn’t exist.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">-include myrule.file # no error if myrule.file doesn&#x27;t exist</span><br></pre></td></tr></table></figure>
+
+<h2 id="Some-M-options-in-gcc"><a href="#Some-M-options-in-gcc" class="headerlink" title="Some -M options in gcc"></a>Some <code>-M</code> options in gcc</h2><ul>
+<li><code>-M</code>: instead of outputing the preprocessed result, output a <code>make</code> suiting dependency rule</li>
+<li><code>-MM</code>: ignore system header files</li>
+<li><code>-MD</code>: don’t stop at the preprocessor, do the rest of the compilation process and generate the dependency as a side product</li>
+<li><code>-MMD</code>: <code>-MD</code> and <code>-MM</code> combined</li>
+<li><code>-MP</code>: create phony targets for each dependency other than the main file</li>
+</ul>
+<h3 id="MP-explanation"><a href="#MP-explanation" class="headerlink" title="-MP explanation"></a><code>-MP</code> explanation</h3><p>Say the <code>-MMD</code> option generated <code>foo.d</code>:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">foo.o: foo.c foo.h myheader.h</span><br></pre></td></tr></table></figure>
+<p>Now if <code>myheader.h</code> is no longer needed, we remove it from <code>foo.c</code>, delete <code>myheader.h</code> and rerun <code>make</code>, because <code>foo.d</code> hasn’t changed <code>make</code> will complain that <code>myheader.h</code> is not found and report an error.<br><code>-MP</code> will create <code>foo.d</code> like this:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">foo.o: foo.c foo.h myheader.h</span><br><span class="line"></span><br><span class="line">foo.h:</span><br><span class="line"></span><br><span class="line">myheader.h:</span><br></pre></td></tr></table></figure>
+<p>Then <code>myheader.h</code> will be seen as an empty target by <code>make</code> in the case that <code>myheader.h</code> is not present.</p>
+<h2 id="Multi-rule-handling"><a href="#Multi-rule-handling" class="headerlink" title="Multi-rule handling"></a>Multi-rule handling</h2><p>When using implicit rules and <code>include</code>s, there might be multiple rules for one target, in that case all the dependencies are unioned into one big list. The recipe is executed when any of the dependency is younger than the target. There can only be one recipe to be executed for a file.</p>
+<h2 id="References"><a href="#References" class="headerlink" title="References"></a>References</h2><p><a target="_blank" rel="noopener" href="https://www.gnu.org/software/make/manual/html_node/Multiple-Rules.html#Multiple-Rules">make manual: 4.11 Multiple Rules for One Target</a></p>
+<p><a target="_blank" rel="noopener" href="https://blog.csdn.net/howellzhu/article/details/43083675">makefile文件中dash include的含义</a></p>
+<p><a target="_blank" rel="noopener" href="https://devhints.io/makefile">Makefile cheatsheet</a></p>
+<p><a target="_blank" rel="noopener" href="https://tech.davis-hansson.com/p/make/">Your Makefiles are Wrong</a></p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Assignments"><span class="top-box-text">Assignments</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Magic-variables"><span class="top-box-text">Magic variables</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Basic-implicit-rule"><span class="top-box-text">Basic implicit rule</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#List-generation"><span class="top-box-text">List generation</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#List-mapping"><span class="top-box-text">List mapping</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Including-files"><span class="top-box-text">Including files</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Some-M-options-in-gcc"><span class="top-box-text">Some -M options in gcc</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#MP-explanation"><span class="top-box-text">-MP explanation</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Multi-rule-handling"><span class="top-box-text">Multi-rule handling</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#References"><span class="top-box-text">References</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/git-chain/">
+          <h3 class="post-title">
+            Next: How Git repositories are blockchains
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
