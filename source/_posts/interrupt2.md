@@ -215,7 +215,7 @@ static void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
                  *
                  * Pairs with the write barrier in gic_ipi_send_mask
                  */
-                // inqnr <= 代表IPI (GIC中叫做SGI)
+                // inqnr <= 15 代表IPI (GIC中叫做SGI)
                 if (irqnr <= 15) {
                         smp_rmb();
 
