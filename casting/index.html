@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>把`char`cast成`unsigned int`會sign extend </title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="把`char`cast成`unsigned int`會sign extend , blog keywords">
+<meta name="description" content="看一下這段code:
+12345678#include &lt;stdio.h&gt;int main() &#123;	char a = 0xFF;	unsigned char b = 0xFF;	printf(&quot;%x, %x\">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">把`char`cast成`unsigned int`會sign extend </h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2024-06-12</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/C/">
+              C
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <p>看一下這段code:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">()</span> &#123;</span><br><span class="line">	<span class="type">char</span> a = <span class="number">0xFF</span>;</span><br><span class="line">	<span class="type">unsigned</span> <span class="type">char</span> b = <span class="number">0xFF</span>;</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;%x, %x\n&quot;</span>, (<span class="type">unsigned</span> <span class="type">int</span>)a, (<span class="type">unsigned</span> <span class="type">int</span>)b);</span><br><span class="line">	<span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>如標題所說結果是:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ffffffff, ff</span><br></pre></td></tr></table></figure>
+
+<p>其實不知道大多數人是覺得這樣是預期中的行為還是不是XD 我是有一點點意外就是了</p>
+<p>來看一下為什麼:</p>
+<p>在(當前)最新的C標準draft中的 6.3.1.3 Signed and unsigned integers 可以看到</p>
+<blockquote>
+<p>1 When a value with integer type is converted to another integer type other than bool, if the value can be represented by the new type, it is unchanged.</p>
+</blockquote>
+<blockquote>
+<p>2 Otherwise, if the new type is unsigned, the value is converted by repeatedly adding or subtracting one more than the maximum value that can be represented in the new type until the value is in the range of the new type.</p>
+</blockquote>
+<blockquote>
+<p>3 Otherwise, the new type is signed and the value cannot be represented in it; either the result is implementation-defined or an implementation-defined signal is raised.</p>
+</blockquote>
+<p>第一點很合理，如果目標型別可以表示被轉換的值，那麼型別轉換過去之後值不變。</p>
+<p>第二點則是我們的例子適用的情況，但他寫得有點難理解: 如果目標型別(<code>unsigned int</code>)沒辦法表示要被轉換的值(0xFF, -1)，則把目標型別能表示的最大值+1，然後用被轉換的值去加或減它，直到能夠被目標型別表示為止。</p>
+<p>換句話說，如果被轉換的值是X，目標型別能表示的最大值是Y，則計算</p>
+<p>X + (Y + 1)<br>X + 2(Y + 1)<br>X + 3(Y + 1)<br>…</p>
+<p>或者</p>
+<p>X - (Y + 1)<br>X - 2(Y + 1)<br>X - 3(Y + 1)<br>…</p>
+<p>看哪個先能夠被目標型別表示</p>
+<p>以我們的例子來說，目標型別(<code>unsigned int</code>)能表示的最達值是 2^32 - 1，所以Y &#x3D; 2^32 - 1，Y + 1就是2^32，接著我們的X是(-1)，直接看出X + (Y + 1) → -1 + (2^32 - 1 + 1) → -1 + 2^32 → 2^32 - 1，即可被<code>unsigned int</code>表示(<code>0xFFFFFFFF</code>)。</p>
+<p>也就是說，<code>char</code>轉換成<code>unsigned int</code>會sign extend，因為對於所有代表負值的<code>char</code>都不能直接被<code>unsigned int</code>表示，而進行X + (Y + 1)運算的結果就是2^32 - |X|，其實就是two’s complement X的表示。</p>
+<p>有趣的是在6.2.5 Types中:</p>
+<blockquote>
+<p>20 The three types char, signed char, and unsigned char are collectively called the character types. The implementation shall define char to have the same range, representation, and behavior as either signed char or unsigned char.</p>
+</blockquote>
+<p>也就是說依照implementation, <code>char</code>也可能是<code>unsigned char</code>，那麼上述的狀況就不成立，因為0xFF就是255而不是-1了。</p>
+<p>順便提一下，<code>char</code> 是一個integer type (6.2.5 Types):</p>
+<blockquote>
+<p>There are five standard signed integer types, designated as <code>signed char</code>, <code>short int</code>, <code>int</code>, <code>long int</code>, and <code>long long int</code>.</p>
+</blockquote>
+<p>還有，例子中的</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">char</span> a = <span class="number">0xFF</span>;</span><br></pre></td></tr></table></figure>
+
+<p>其實是個implementation defined的行為，因為從6.4.4.1 Integer constants中的規則來看<code>0xFF</code>這個東西會被判斷成<code>int</code>，所以值是255，在我們的case中是無法被<code>char</code>表示的(-128 ~ 127)，所以轉換適用上面第三點。</p>
+
+        </div>
+        <div class="top-div">
+          
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/interrupt2_en/">
+          <h3 class="post-title">
+            Next: Linux Interrupt Subsystem Intro (2): Interrupt Handling Process
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
