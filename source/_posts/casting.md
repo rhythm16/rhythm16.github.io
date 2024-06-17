@@ -1,6 +1,5 @@
 ---
-title: "把`char`cast成`unsigned int`會sign extend
-"
+title: "把`char`cast成`unsigned int`會sign extend"
 date: 2024-06-12 12:54:15
 summary:
 tags:
@@ -23,7 +22,7 @@ int main() {
 
 如標題所說結果是:
 
-```c
+```plain
 ffffffff, ff
 ```
 
