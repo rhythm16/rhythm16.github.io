@@ -99,6 +99,55 @@
 
 <section class="post-item">
     <div class="content">
+      <a href="/cache/">
+        <h2 class="post-title">為什麼KVM重新初始化vCPU時要清除所有stage 2地址轉換?</h2>
+      </a>
+      <a href="/cache/">
+          <div class="post-abstract">
+            
+			    
+對於這篇我原本是想要寫的順一點的，但寫到後來實在是太雜了也太多背景知識要補充，所以最後比較像是一份雜亂的筆記😅 有興趣的人如果有問題歡迎來信討論
+
+此文中”guest”與”VM”與”guest VM”這三個詞是一樣的意思
+Arm Arc
+            
+          </div>
+      </a>
+      <div class="post-info">
+        <span><i class="icon icon-calendar-outline"></i> 2024-10-30</span>
+        
+          <span>
+            <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+                Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KVM/">
+                KVM
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+                ARMv8
+                
+              </a>
+            
+          </span>
+        
+      </div>
+    </div>
+  </section>
+
+
+
+<section class="post-item">
+    <div class="content">
       <a href="/interrupt2_en/">
         <h2 class="post-title">Linux Interrupt Subsystem Intro (2): Interrupt Handling Process</h2>
       </a>
@@ -604,13 +653,6 @@ IntroductionThe last post explained how EL2 per cpu variables
                 
               </a>
             
-              <a href="/tags/ARMv8/">
-                ARMv8
-                
-                  ，
-                
-              </a>
-            
               <a href="/tags/KVM/">
                 KVM
                 
@@ -618,58 +660,8 @@ IntroductionThe last post explained how EL2 per cpu variables
                 
               </a>
             
-              <a href="/tags/per-cpu-variables/">
-                per cpu variables
-                
-              </a>
-            
-          </span>
-        
-      </div>
-    </div>
-  </section>
-
-
-
-<section class="post-item">
-    <div class="content">
-      <a href="/percpu_2/">
-        <h2 class="post-title">KVM ARM: EL2 per cpu變數(2): 初始化</h2>
-      </a>
-      <a href="/percpu_2/">
-          <div class="post-abstract">
-            
-			    
-Linux版本：v6.0
-處理器架構：ARMv8
-KVM品種：NVHE
-
-前言上一篇說明了KVM ARM EL2 per cpu變數如何宣告與使用。簡單複習一下，EL2 per cpu變數的存取方式是先取得被放在.hyp.data..pe
-            
-          </div>
-      </a>
-      <div class="post-info">
-        <span><i class="icon icon-calendar-outline"></i> 2022-11-24</span>
-        
-          <span>
-            <i class="icon icon-pricetags-outline"></i>
-            
-              <a href="/tags/Linux/">
-                Linux
-                
-                  ，
-                
-              </a>
-            
               <a href="/tags/ARMv8/">
                 ARMv8
-                
-                  ，
-                
-              </a>
-            
-              <a href="/tags/KVM/">
-                KVM
                 
                   ，
                 

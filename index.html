@@ -93,6 +93,55 @@
 
 <section class="post-item">
     <div class="content">
+      <a href="/cache/">
+        <h2 class="post-title">為什麼KVM重新初始化vCPU時要清除所有stage 2地址轉換?</h2>
+      </a>
+      <a href="/cache/">
+          <div class="post-abstract">
+            
+			    
+對於這篇我原本是想要寫的順一點的，但寫到後來實在是太雜了也太多背景知識要補充，所以最後比較像是一份雜亂的筆記😅 有興趣的人如果有問題歡迎來信討論
+
+此文中”guest”與”VM”與”guest VM”這三個詞是一樣的意思
+Arm Arc
+            
+          </div>
+      </a>
+      <div class="post-info">
+        <span><i class="icon icon-calendar-outline"></i> 2024-10-30</span>
+        
+          <span>
+            <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+                Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KVM/">
+                KVM
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+                ARMv8
+                
+              </a>
+            
+          </span>
+        
+      </div>
+    </div>
+  </section>
+
+
+
+<section class="post-item">
+    <div class="content">
       <a href="/casting_en/">
         <h2 class="post-title">Casting a `char` to an `unsigned int` sign extends</h2>
       </a>
@@ -468,48 +517,6 @@ IntroductionMemory mapping is probably the toughest part to understand in the
       </a>
       <div class="post-info">
         <span><i class="icon icon-calendar-outline"></i> 2023-02-13</span>
-        
-          <span>
-            <i class="icon icon-pricetags-outline"></i>
-            
-              <a href="/tags/Linux/">
-                Linux
-                
-                  ，
-                
-              </a>
-            
-              <a href="/tags/page-tables/">
-                page tables
-                
-              </a>
-            
-          </span>
-        
-      </div>
-    </div>
-  </section>
-
-
-
-<section class="post-item">
-    <div class="content">
-      <a href="/page_table/">
-        <h2 class="post-title">Linux ARM64 `__create_pgd_mapping` 分析</h2>
-      </a>
-      <a href="/page_table/">
-          <div class="post-abstract">
-            
-			    
-Linux版本：v6.0
-處理器架構：ARMv8
-
-前言在理解 Linux kernel 開機流程時，最難理解的應該就是記憶體映射的部份了，我認為困難的點在於處理記憶體映射的程式本身也在記憶體的映射之中，所以除了看懂程式邏輯之外，還必須理
-            
-          </div>
-      </a>
-      <div class="post-info">
-        <span><i class="icon icon-calendar-outline"></i> 2023-01-17</span>
         
           <span>
             <i class="icon icon-pricetags-outline"></i>
