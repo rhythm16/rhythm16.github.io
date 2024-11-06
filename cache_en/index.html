@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Why does the stage 2 page tables need to be  cleared after a reinitialization of a vCPU?</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Why does the stage 2 page tables need to be  cleared after a reinitialization of a vCPU?, blog keywords">
+<meta name="description" content="
+Originally I wanted to do better job at presenting the contents of this article, but there is just too much information">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Why does the stage 2 page tables need to be  cleared after a reinitialization of a vCPU?</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2024-11-06</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/Linux/">
+              Linux
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/KVM/">
+              KVM
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Originally I wanted to do better job at presenting the contents of this article, but there is just too much information and required knowledge. Now this just looks like some notes that I took down 😅, sorry about that. You are welcome to email if you have any questions.</p>
+</blockquote>
+<p>“guest”, “VM”, and “guest VM” are used interchangably in this article.</p>
+<p>Arm Architecture Reference Manual K.a is assumed.</p>
+<h2 id="The-Piece-of-Code-that-I-Couldn’t-Understand"><a href="#The-Piece-of-Code-that-I-Couldn’t-Understand" class="headerlink" title="The Piece of Code that I Couldn’t Understand"></a>The Piece of Code that I Couldn’t Understand</h2><p>I saw this during my code-reading:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">kvm_arch_vcpu_ioctl_vcpu_init</span><span class="params">(<span class="keyword">struct</span> kvm_vcpu *vcpu,</span></span><br><span class="line"><span class="params">					 <span class="keyword">struct</span> kvm_vcpu_init *init)</span></span><br><span class="line">&#123;</span><br><span class="line"></span><br><span class="line">[...]</span><br><span class="line">	<span class="comment">/*</span></span><br><span class="line"><span class="comment">	 * Ensure a rebooted VM will fault in RAM pages and detect if the</span></span><br><span class="line"><span class="comment">	 * guest MMU is turned off and flush the caches as needed.</span></span><br><span class="line"><span class="comment">	 *</span></span><br><span class="line"><span class="comment">	 * S2FWB enforces all memory accesses to RAM being cacheable,</span></span><br><span class="line"><span class="comment">	 * ensuring that the data side is always coherent. We still</span></span><br><span class="line"><span class="comment">	 * need to invalidate the I-cache though, as FWB does *not*</span></span><br><span class="line"><span class="comment">	 * imply CTR_EL0.DIC.</span></span><br><span class="line"><span class="comment">	 */</span></span><br><span class="line">    <span class="comment">// reinit this vCPU</span></span><br><span class="line">	<span class="keyword">if</span> (vcpu_has_run_once(vcpu)) &#123;</span><br><span class="line">        <span class="comment">// if no FEAT_FWB</span></span><br><span class="line">		<span class="keyword">if</span> (!cpus_have_final_cap(ARM64_HAS_STAGE2_FWB))</span><br><span class="line">            <span class="comment">// unmap all stage 2 mappings</span></span><br><span class="line">			stage2_unmap_vm(vcpu-&gt;kvm);</span><br><span class="line">		<span class="keyword">else</span></span><br><span class="line">			icache_inval_all_pou();</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">[...]</span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>I’ll assume there’s not FEAT_FWB in this article.</p>
+<p>Now I don’t really understand why reinitializing a vCPU requires KVM to unmap all stage2 mappings. Let’s check the comment first.</p>
+<blockquote>
+<p>Ensure a rebooted VM will fault in RAM pages</p>
+</blockquote>
+<p>This is just describing what the code is doing, not the reason, so not helpful.</p>
+<blockquote>
+<p>and detect if the guest MMU is turned off and flush the caches as needed.</p>
+</blockquote>
+<p>Now this piece of code is not “detecting” anything (aside from FWB), let alone detecting if the guest’s MMU is off, so not sure what this is about. Next the comments says flush the caches as needed, sounds like a reasonable thing to do, but when is this needed is not explained.</p>
+<h2 id="What-does-the-Mailing-List-Say"><a href="#What-does-the-Mailing-List-Say" class="headerlink" title="What does the Mailing List Say?"></a>What does the Mailing List Say?</h2><p>It’s time to turn to the mailing list after not understanding some code. <code>git blame</code> and checking the commits often leads us to the email thread discussing the code. This piece of code has gone through a few modifications, <a target="_blank" rel="noopener" href="https://lore.kernel.org/all/20200415072835.1164-1-yuzenghui@huawei.com/">this thread</a> has more helpful discussions, and Alexandru Elisei explained why the original author Christoffer Dall adds <code>stage2_unmap_vm</code> :</p>
+<blockquote>
+<p>I had a chat with Christoffer about stage2_unmap_vm, and as I understood it, the purpose was to make sure that any changes made by userspace were seen by the guest while the MMU is off. When a stage 2 fault happens, we do clean+inval on the dcache, or inval on the icache if it was an exec fault. This means that whatever the host userspace writes while the guest is shut down and is still in the cache, the guest will be able to read&#x2F;execute.</p>
+<p>This can be relevant if the guest relocates the kernel and overwrites the original image location, and userspace copies the original kernel image back in before restarting the vm.</p>
+</blockquote>
+<h2 id="Analysis"><a href="#Analysis" class="headerlink" title="Analysis"></a>Analysis</h2><p>The sequence of events that is described in the mailing list is:</p>
+<ol>
+<li><p>guest runs and accesses memory</p>
+</li>
+<li><p>some interrupt or exception causes the CPU to switch back to host userspace</p>
+</li>
+<li><p>userspace pauses the guest, prepares to restart the VM, so it rewrites all guest memory, vCPU registers, etc.</p>
+</li>
+<li><p>userspace calls KVM API to reinitialize vCPU</p>
+</li>
+<li><p>guest restarts, and the initial state of the MMU is off</p>
+</li>
+</ol>
+<p>I think of two issues that could happen during this process.</p>
+<ol>
+<li><p>coherency gets broken in the cache, because the guest and the host uses separate address spaces, for example</p>
+<ol>
+<li><p>guest accesses address virtual address X, where the corresponding physical address is P, and X(P) is in the cache</p>
+</li>
+<li><p>host then rewrites guest memory, accesses virtual address Y, with the same physical address P, so Y(P) and X(P) are both in the cache</p>
+</li>
+<li><p>hardware decides to write back (clean) Y(P), and invalidate</p>
+</li>
+<li><p>hardware later decides to write back (clean) X(P), and invalidate, this causes the new data (Y) to be overwritten by the old data (X), so we lose the new updates by the host</p>
+</li>
+</ol>
+</li>
+<li><p>after restart, at step 5, guest accesses the old data (the data before restart), instead of the new data written by the host in step 3 above</p>
+<ol>
+<li><p>before guest restarts, its contents are in both the cache and memory</p>
+</li>
+<li><p>at step 3 above, host rewrites guest memory, but the updated data are only in the cache, not flushed to main memory yet</p>
+</li>
+<li><p>guest restarts, and since MMU is off, CPU directly reads data from memory instead of the cache, hence accessing old data</p>
+</li>
+</ol>
+</li>
+</ol>
+<h3 id="Problem-1"><a href="#Problem-1" class="headerlink" title="Problem 1"></a>Problem 1</h3><p>Let’s first discuss if issue 1 can happen or not, there are two cases:</p>
+<p>First, if guest’s memory access attributes are identical to the host, then it’s simple</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">D8.17.1 Data and unified caches</span><br><span class="line"></span><br><span class="line">R_JHVQL</span><br><span class="line">For data and unified caches, if all data accesses to an address do not use mismatched memory attributes, then the </span><br><span class="line">use of address translation is transparent to any data access to the address.</span><br><span class="line"></span><br><span class="line">I_FHPPX</span><br><span class="line">The properties of data and unified caches are consistent with implementing the caches as physically-indexed, </span><br><span class="line">physically-tagged caches.</span><br><span class="line"></span><br><span class="line">D8.17.2 Instruction caches</span><br><span class="line"></span><br><span class="line">R_YXNGL &amp; R_LYZYY</span><br><span class="line">If all instruction fetches to an address do not use mismatched memory attributes, then the use of address </span><br><span class="line">translation is transparent to any instruction fetch to the address.</span><br></pre></td></tr></table></figure>
+
+<p>The cache acts like a PIPT cache in this case, so no coherency problem from different VAs mapping to the same PA. Ordering won’t be an issue either, because switching exception levels is a context synchronization event. However, because there aren’t guarantees of coherency between instruction cache and data cache, KVM must invalidate the instruction cache before restarting the vCPU.</p>
+<p>Second, even if the memory access attributes of the guest is different from the host, there wouldn’t be a problem as well, even if we can see:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">B2.15.1.2 Non-shareable Normal memory</span><br><span class="line">A location in Normal memory with the Non-shareable attribute does not require the hardware to make data accesses </span><br><span class="line">by different observers coherent, unless the memory is Non-cacheable. For a Non-shareable location, if other </span><br><span class="line">observers share the memory system, software must use cache maintenance instructions, if the presence of caches </span><br><span class="line">might lead to coherency issues when communicating between the observers. This cache maintenance requirement </span><br><span class="line">is in addition to the barrier operations that are required to ensure memory ordering.</span><br></pre></td></tr></table></figure>
+
+<p>It is known that the host uses inner cacheable, inner shareable attributes, and the stage 2 attributes set for the guest is also inner shareable, therefore the guest would not be using a non-shareable attribute, so there won’t be a coherency problem. The rules for combining stage 1 and stage 2 attributes are listed below.</p>
+
+
+
+
+<p>Now that both the host and the guest uses the inner shareable attribute, we can see:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">B2.15.1.1.1 Shareable, Inner Shareable, and Outer Shareable Normal memory</span><br><span class="line">Each Inner Shareability domain contains a set of observers that are data coherent for each member of that set for </span><br><span class="line">data accesses with the Inner Shareable attribute made by any member of that set.</span><br></pre></td></tr></table></figure>
+
+<p>Very safe. Still got to flush the instruction cache though.</p>
+<p>No cacheability concerns here because the host and the guest uses the cache by definition, so the attribute must be inner cacheable. All caches in an operating system are expected to be in the same inner shareability domain.</p>
+<p>To clarify, the need for cache maintenance operations in the statement below applies to the cases where there may be arbitrary cacheability, which is not our case. We know both the guest and the host uses inner cacheable attribute.</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">D8.17.3 Cache maintenance requirements due to changing memory region attributes</span><br><span class="line">The behaviors caused by mismatched memory attributes mean that if any of the following changes are made to the </span><br><span class="line">Inner Cacheability or Outer Cacheability attributes in translation table entries, then software is required to ensure </span><br><span class="line">that any cached copies of affected locations are removed from the caches, typically by cleaning and invalidating the </span><br><span class="line">locations from the cache levels that might hold copies of the locations affected by the attribute change:</span><br><span class="line">• A change from Write-Back to Write-Through.</span><br><span class="line">• A change from Write-Back to Non-cacheable.</span><br><span class="line">• A change from Write-Through to Non-cacheable.</span><br><span class="line">• A change from Write-Through to Write-Back.</span><br></pre></td></tr></table></figure>
+
+<h3 id="Problem-2"><a href="#Problem-2" class="headerlink" title="Problem 2"></a>Problem 2</h3><p>This is the primary situation that was discussed in the mailing list thread, and it does have the possiblity of happening. The reason why unmapping stage 2 helps solves this issue is because after restarting the guest will keep doing stage 2 page faults, and KVM cleans + invalidates cache to PoC for VA when handling the stage 2 page faults, when doing these cache maintenance operations:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">D7.5.9.5 Effects of instructions that operate by VA to the PoC</span><br><span class="line">For Normal memory that is not Inner Non-cacheable, Outer Non-cacheable, cache maintenance instructions that </span><br><span class="line">operate by VA to the PoC must affect the caches of other PEs in the shareability domain described by the shareability </span><br><span class="line">attributes of the VA supplied with the instruction.</span><br></pre></td></tr></table></figure>
+
+<p>All CPUs using the inner&#x2F;non shareable attributes will see the results of the clean + invalidate.</p>
+<p>But do we <em><strong>have to</strong></em> unmap? Can’t we just clean + invalidate all VA ranges? It might be because unmapping delays the cache maintenance operations. A small comparison between these two methods:</p>
+<p>unmap:</p>
+<ul>
+<li><p>walk all guest stage 2 page tables and clear everything</p>
+</li>
+<li><p>guest page faults when accessing each page, and KVM does clean and invalidate then</p>
+</li>
+</ul>
+<p>clean + invalidate</p>
+<ul>
+<li>walk all guest stage 2 page tables and clean + invalidate everything</li>
+</ul>
+<p>It’s an interesting question whether which one is better, but my guess is that the original author chose to unmap everything because it’s just easier to implement XD</p>
+<h2 id="Background"><a href="#Background" class="headerlink" title="Background"></a>Background</h2><ul>
+<li><p>Linux assumes all CPUs under its control is in the same inner shareability domain, which is also assumed by the ARM architecture</p>
+</li>
+<li><p>The normal memory attributes that Linux uses are Inner Shareable, Inner Write-Back Cacheable Non-transient Outer Write-Back Cacheable Non-transient</p>
+</li>
+<li><p>device memory is not cached</p>
+</li>
+<li><p>when stage 2 translation is activated, stage 1 memory access attirbutes (controlled by the guest) is combined with KVM-controlled stage 2 memory access attritubes</p>
+</li>
+</ul>
+<h2 id="Related-ARM-Architecture-Reference-Manual-Sections"><a href="#Related-ARM-Architecture-Reference-Manual-Sections" class="headerlink" title="Related ARM Architecture Reference Manual Sections"></a>Related ARM Architecture Reference Manual Sections</h2><ul>
+<li><p>B2.12 Caches and memory hierarchy</p>
+</li>
+<li><p>B2.15 Memory types and attributes</p>
+</li>
+<li><p>B2.16 Mismatched memory attributes</p>
+</li>
+<li><p>D7.5 Cache support</p>
+</li>
+<li><p>D8.2.12 The effects of disabling an address translation stage</p>
+</li>
+<li><p>D8.6 Memory region attributes</p>
+</li>
+<li><p>D8.17 Caches</p>
+</li>
+</ul>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#The-Piece-of-Code-that-I-Couldn%E2%80%99t-Understand"><span class="top-box-text">The Piece of Code that I Couldn’t Understand</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#What-does-the-Mailing-List-Say"><span class="top-box-text">What does the Mailing List Say?</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Analysis"><span class="top-box-text">Analysis</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Problem-1"><span class="top-box-text">Problem 1</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Problem-2"><span class="top-box-text">Problem 2</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Background"><span class="top-box-text">Background</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Related-ARM-Architecture-Reference-Manual-Sections"><span class="top-box-text">Related ARM Architecture Reference Manual Sections</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/cache/">
+          <h3 class="post-title">
+            Next: 為什麼KVM重新初始化vCPU時要清除所有stage 2地址轉換?
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
