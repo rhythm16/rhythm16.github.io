@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>為什麼ARM Nested Virtualization的VNCR page 沒有CNT{P, V} TVAL_EL0</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="為什麼ARM Nested Virtualization的VNCR page 沒有CNT{P, V} TVAL_EL0, blog keywords">
+<meta name="description" content="最近在研究ARM架構對於nested virtualization的支持和KVM ARM nested virtualization的實作，所以也就讀到了Generic timer的虛擬化。在觀察FEAT_NV2和Generic timer">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">為什麼ARM Nested Virtualization的VNCR page 沒有CNT{P, V} TVAL_EL0</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2025-01-25</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/Nested-Virtualization/">
+              Nested Virtualization
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <p>最近在研究ARM架構對於nested virtualization的支持和KVM ARM nested virtualization的實作，所以也就讀到了Generic timer的虛擬化。在觀察FEAT_NV2和Generic timer的相互作用時，我發現VNCR page中沒有CNT{P, V}_TVAL_EL0，經過一些思考我發現這其實是FEAT_NV2與Generic Timer之間的架構衝突，而ARM Reference Manual中沒有寫明，所以還挺有趣的。</p>
+<p>在說明之前，先來簡單說明一下FEAT_NV2與Generic Timer:</p>
+<h2 id="FEAT-NV2"><a href="#FEAT-NV2" class="headerlink" title="FEAT_NV2"></a>FEAT_NV2</h2><p>FEAT_NV2的全名叫做Enhanced Nested Virtualization，在沒有FEAT_NV2而只有FEAT_NV的情況下，執行guest EL2時基本上無論存取EL2或者EL1系統暫存器時都需要trap到EL2，這是因為guest EL2跑在真實CPU的EL1上，EL2暫存器當然不能讓guest EL2存取，而EL1暫存器技術上可以，但guest EL2存取EL1暫存器的目的是準備guest EL1&#x2F;0的執行環境，自己的EL2環境則是不變的，而如果真的讓guest EL2存取EL1暫存器則會造成guest EL2跑的真EL1環境改變，造成錯誤。那在EL2和EL1系統暫存器的存取都要trap到真EL2的情況下，正確性是有了，但效能就變得很差，執行時guest EL2會頻繁地trap到真EL2。</p>
+<p>為了改善效能，FEAT_NV2出現了。支持FEAT_NV2的硬體在執行guest EL2時，以下兩種系統暫存器的存取會被硬體轉換成記憶體存取:</p>
+<ol>
+<li><p>EL1系統暫存器</p>
+</li>
+<li><p>只影響EL1&#x2F;0執行環境的EL2系統暫存器</p>
+</li>
+</ol>
+<p>每個被轉換的系統暫存器都有一個自己的記憶體位址，這個位址由offset + base address組成，offset被ARM架構各別指定，base address則是被VNCR_EL2所指定。這個優化的原理是源於guest EL2幫guest EL1&#x2F;0準備執行環境時其實不需要所有存取都馬上產生效果，而只要在guest EL1&#x2F;0開始跑之前有把效果達到就好，那硬體就先幫忙把想要改變的值都導到記憶體，真的eret開始跑guest EL1&#x2F;0時真正的EL2再幫忙把guest EL1&#x2F;0所需的環境依照記憶體內容搭建好就可以了，從而避免guest EL2每存取一次系統暫存器都要trap的效能問題。</p>
+<h2 id="Generic-Timer"><a href="#Generic-Timer" class="headerlink" title="Generic Timer"></a>Generic Timer</h2><p>每個ARM CPU上有多個Generic Timer，每個均由三個暫存器所構成，在EL1&#x2F;0有2個timer可以用，physical timer和virtual timer，暫存器如下:</p>
+<p>physical timer:</p>
+<ul>
+<li><p>CNTP_CTL_EL0</p>
+</li>
+<li><p>CNTP_CVAL_EL0</p>
+</li>
+<li><p>CNTP_TVAL_EL0</p>
+</li>
+</ul>
+<p>virtual timer:</p>
+<ul>
+<li><p>CNTV_CTL_EL0</p>
+</li>
+<li><p>CNTV_CVAL_EL0</p>
+</li>
+<li><p>CNTV_TVAL_EL0</p>
+</li>
+</ul>
+<p>CNT{P, V}_CTL_EL0為控制暫存器，可以開關timer，mask interrupt等等，而CNT{P, V}_{C, T}VAL_EL0則是負責設定timer何時觸發</p>
+<p>CVAL: 寫入T則代表設定時間T，當system count &gt;&#x3D; T時timer中斷便會觸發</p>
+<p>TVAL: 寫入t則代表設定t個count之後觸發，也就是system count &gt;&#x3D; (現在的system count) + t時timer中斷觸發</p>
+<p>重要的是CVAL與TVAL為硬體提供設定同一個timer的兩種不同方式，而不是有兩個timer可以用，所以寫入CVAL時TVAL會跟著改變，反過來也是。</p>
+<h2 id="兩者之間的衝突"><a href="#兩者之間的衝突" class="headerlink" title="兩者之間的衝突"></a>兩者之間的衝突</h2><p>理解FEAT_NV2與Generic timer之後可以來談他們的衝突了，其實也不複雜，如果觀察FEAT_NV2中VNCR page中的各個暫存器，會發現有CNTV_CVAL_EL0，CNTV_CTL_EL0，  CNTP_CVAL_EL0，CNTP_CTL_EL0這四個暫存器，而不見CNT{P, V}_TVAL_EL0的影子，為什麼呢?</p>
+<p>其實是因為上面講到的，”CVAL與TVAL為硬體提供設定同一個timer的兩種不同方式”，用反的來解釋必較容易，如果VNCR page CVAL與TVAL都有，那一個guest hypervisor (guest EL2)執行時，寫了TVAL之後，再寫CVAL，也就是說VNCR page中CVAL和TVAL的位址都被改變，那現在換host hypervisor執行了，要怎麼分辨CVAL還是TVAL的位址的值才是最新的，要拿來更新CNT{P, V}_{C, T}VAL_EL0呢? 又或者，guest hypervisor寫了TVAL，再讀CVAL，guest hypervisor就會發現CVAL的值竟然沒有跟的TVAL的寫入而被更新，不符合架構的要求。</p>
+<p>為了解決這個問題，FEAT_NV2設計上只好被迫選擇CVAL跟TVAL其中一個來放進VNCR page中得到優化，而選擇CVAL的原因我猜是因為Linux使用CVAL比較多? 不太確定XD。至於TVAL的存取就必須trap到EL2來處理。</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#FEAT-NV2"><span class="top-box-text">FEAT_NV2</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Generic-Timer"><span class="top-box-text">Generic Timer</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%85%A9%E8%80%85%E4%B9%8B%E9%96%93%E7%9A%84%E8%A1%9D%E7%AA%81"><span class="top-box-text">兩者之間的衝突</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/cache_en/">
+          <h3 class="post-title">
+            Next: Why does the stage 2 page tables need to be  cleared after a reinitialization of a vCPU?
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
