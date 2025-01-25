@@ -2,6 +2,15 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
+    <loc>https://rhythm16.github.io/about/index.html</loc>
+    
+    <lastmod>2025-01-25</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
     <loc>https://rhythm16.github.io/cache_en/</loc>
     
     <lastmod>2024-11-06</lastmod>
@@ -14,15 +23,6 @@
     <loc>https://rhythm16.github.io/cache/</loc>
     
     <lastmod>2024-10-30</lastmod>
-    
-    <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  
-  <url>
-    <loc>https://rhythm16.github.io/about/index.html</loc>
-    
-    <lastmod>2024-08-28</lastmod>
     
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
@@ -328,7 +328,7 @@
 
   <url>
     <loc>https://rhythm16.github.io/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
@@ -336,140 +336,140 @@
   
   <url>
     <loc>https://rhythm16.github.io/tags/GOT-PLT/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/Linux/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/ELF/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/KVM/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/ARMv8/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/C/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/LKML/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/GIC/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/git/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/blockchain/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/test-tag1/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/test-tag2/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/test-tag3/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/interrupt/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/KASLR/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/page-tables/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/kallsyms/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/make/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/memory-barriers/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/tags/per-cpu-variables/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
@@ -478,21 +478,21 @@
   
   <url>
     <loc>https://rhythm16.github.io/categories/technical/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/categories/template/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>https://rhythm16.github.io/categories/Books/</loc>
-    <lastmod>2024-11-06</lastmod>
+    <lastmod>2025-01-25</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
