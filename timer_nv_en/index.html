@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Why aren’t CNT{P, V} TVAL_EL0 in the VNCR page?</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Why aren’t CNT{P, V} TVAL_EL0 in the VNCR page?, blog keywords">
+<meta name="description" content="Recently I have been looking at ARM architecture’s support for nested virtualization and its implementation in KVM ARM, ">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Why aren’t CNT{P, V} TVAL_EL0 in the VNCR page?</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2025-01-30</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+                  ，
+                
+              </a>
+            
+              <a href="/tags/Nested-Virtualization/">
+              Nested Virtualization
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <p>Recently I have been looking at ARM architecture’s support for nested virtualization and its implementation in KVM ARM, so I also read about the virtualization of the generic timer. While reading about the nested virtualization of the generic timer, I found that, confusingly,  CNT{P, V}_TVAL_EL0 is missing in the VNCR page. After thinking about it for a while I realized there’s an architectural conflict between FEAT_NV2 and the generic timer. Interestingly, the reason isn’t elaborated in the ARM Reference Manual.</p>
+<p>Before explaining, I’ll give a brief overview of FEAT_NV2 and the Generic Timer.</p>
+<h2 id="FEAT-NV2"><a href="#FEAT-NV2" class="headerlink" title="FEAT_NV2"></a>FEAT_NV2</h2><p>FEAT_NV2 is ARM’s “Enhanced Nested Virtualization” support, and is based on FEAT_NV, which provides the basic features for nested virtualization. In a system without FEAT_NV2 and only FEAT_NV, the guest EL2 will trap to EL2 whenever it accesses EL1 or EL2 system registers. This is because the guest EL2 runs in real EL1, so the real EL2 registers cannot be directly accessed by the guest EL2 for obvious reasons. On the other hand, the real EL1 registers provide the environment in which the guest EL2 runs, not the guest EL1 environment that the guest EL2 expects to modify when it accesses EL1 registers, therefore the hypervisor must also trap guest EL2’s EL1 register accesses. Given the trapping of the EL1 and EL2 register accesses, the hypervisor can provide correctness of the virtualization, with the drawback of it being very slow.</p>
+<p>To improve performance, FEAT_NV2 is introduced. FEAT_NV2 hardware turns system register accesses into memory accesses by guest EL2 when it accesses these two types of registers:</p>
+<ol>
+<li><p>EL1 registers</p>
+</li>
+<li><p>EL2 registers that only affects the execution environment of EL1&#x2F;0</p>
+</li>
+</ol>
+<p>Each register that is included in above has its own memory address, composed of a base address + an offset. The offset is given by the ARM architecture, and the base address is the value stored in VNCR_EL2. The idea is that when guest EL2 accesses guest EL1&#x2F;0 registers, it does not need to take effect immediately, it only has to take effect before the guest EL1&#x2F;0 starts to run. The hardware can cache the guest EL2 accesses in memory first, then flush it to the real hardware registers once guest EL1&#x2F;0 is about to run. This reduces an huge amount of trapping.</p>
+<h2 id="Generic-Timer"><a href="#Generic-Timer" class="headerlink" title="Generic Timer"></a>Generic Timer</h2><p>Each ARM CPU has many Generic Timers in it, and each timer is controlled by 3 timer registers. There are 2 timers, physical and virtual timer available in EL1&#x2F;0, their registers are:</p>
+<p>physical timer:</p>
+<ul>
+<li><p>CNTP_CTL_EL0</p>
+</li>
+<li><p>CNTP_CVAL_EL0</p>
+</li>
+<li><p>CNTP_TVAL_EL0</p>
+</li>
+</ul>
+<p>virtual timer:</p>
+<ul>
+<li><p>CNTV_CTL_EL0</p>
+</li>
+<li><p>CNTV_CVAL_EL0</p>
+</li>
+<li><p>CNTV_TVAL_EL0</p>
+</li>
+</ul>
+<p>CNT{P, V}_CTL_EL0 are control registers, used to enable&#x2F;disable the timer, masking interrupts, etc., and CNT{P, V}_{C, T}VAL_EL0 are used to set when the timer should go off.</p>
+<p>CVAL: writing T into it means trigger the timer when system count &gt;&#x3D; T</p>
+<p>TVAL: writing t into it means trigger the timer when system count &gt;&#x3D; current system count + t</p>
+<p>Note that CVAL and TVAL are two different ways to set up the same timer, they do not represent two distinct timers, so when either CVAL or TVAL is written, the other one will have its content changed.</p>
+<h2 id="The-Conflict-Between-the-Two"><a href="#The-Conflict-Between-the-Two" class="headerlink" title="The Conflict Between the Two"></a>The Conflict Between the Two</h2><p>Now after discussing about FEAT_NV2 and the Generic Timer, let’s talk about the conflict between them. If you observe the registers that are listed in the VNCR page, you’ll find there are CNTV_CVAL_EL0, CNTV_CTL_EL0, CNTP_CVAL_EL0, CNTP_CTL_EL0, but not CNT{P, V}_TVAL_EL0. Why aren’t all the timer registers in there?</p>
+<p>This is because “CVAL and TVAL are two different ways to set up the same timer“ talked about above. If both CVAL and TVAL are in the VNCR page, then when a guest EL2 runs, after it writes to TVAL and CVAL, two places in the VNCR page are modified, how can the hypervisor know which value is the newest, to be updated to the hardware CNT{P, V}_{C, T}VAL_EL0? They both represent the same timer after all. Moreover, if the guest EL2 writes to TVAL, then reads CVAL, it will find that CVAL isn’t updated after it wrote to TVAL, violating the architecture.</p>
+<p>To address this problem, FEAT_NV2 is forced to compromise and choose only one of CVAL or TVAL to place in the VNCR page, I’m not really sure why CVAL is selected, perhaps Linux uses CVAL more frequently? IDK :) TVAL access must be trapped, in contrast.</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#FEAT-NV2"><span class="top-box-text">FEAT_NV2</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Generic-Timer"><span class="top-box-text">Generic Timer</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#The-Conflict-Between-the-Two"><span class="top-box-text">The Conflict Between the Two</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/timer_nv/">
+          <h3 class="post-title">
+            Next: 為什麼ARM Nested Virtualization的VNCR page 沒有CNT{P, V} TVAL_EL0
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
