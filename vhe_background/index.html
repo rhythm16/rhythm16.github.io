@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>ARM VHE的一些相關知識</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="ARM VHE的一些相關知識, blog keywords">
+<meta name="description" content="
+處理器架構：ARMv8
+
+前言老實說，這篇是因為我不想要今年只有寫一月那一篇文章所以才趕快找個東西寫的 :)，直到12月才寫第二篇是因為我的生活在這中間發生了一些不小的變化… 不重要，反正之後應該很有機會可以更常寫東西嘍～ 寫是一定要寫的">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">ARM VHE的一些相關知識</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2025-12-28</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>處理器架構：ARMv8</p>
+</blockquote>
+<h2 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h2><p>老實說，這篇是因為我不想要今年只有寫一月那一篇文章所以才趕快找個東西寫的 :)，直到12月才寫第二篇是因為我的生活在這中間發生了一些不小的變化… 不重要，反正之後應該很有機會可以更常寫東西嘍～ 寫是一定要寫的，莫忘初心</p>
+<p>最近又回去看了一下開機的流程，覺得Linux在VHE相關初始化判斷挺有趣的，所以想來介紹一下，不過寫一寫發現不先給點背景知識好像會跳太快，所以這篇先簡單介紹一下VHE，之後再來講講開機相關的部份。</p>
+<h2 id="VHE是啥"><a href="#VHE是啥" class="headerlink" title="VHE是啥"></a>VHE是啥</h2><p>VHE的全稱是Virtualization Host Extension，是Arm架構的一個延展，在沒有VHE的狀況下，EL2是一個和EL1不相同的執行環境：</p>
+<ul>
+<li><p>EL2不像EL1有兩個translation table base register TTBR0_EL1 &amp; TTBR1_EL1，EL2只有一個TTBR0_EL2</p>
+</li>
+<li><p>EL2 translation table entry的格式和bit field定義和EL1 translation table entry不一樣</p>
+</li>
+<li><p>EL2只有一個physical timer，不像EL1有virtual timer和physical timer</p>
+</li>
+<li><p>etc..</p>
+</li>
+</ul>
+<p>也就是說，如果我們想要把Linux這種為EL1編寫的內核跑在EL2上，讓它能直接使用EL2提供的虛擬化功能，作為一個虛擬機器監測器的話，那是不行的，至少在不劇烈改動程式的情況下沒辦法。</p>
+<h3 id="Linux跑在EL2的好處"><a href="#Linux跑在EL2的好處" class="headerlink" title="Linux跑在EL2的好處"></a>Linux跑在EL2的好處</h3><p>簡單說明一下為什麼有把Linux跑在EL2的動機：</p>
+<p>原先Linux KVM在Arm上提供虛擬化功能的方式是把絕大部分的Linux跑在EL1，然後有一小部份，專門為EL2設計的程式碼跑在EL2為EL1提供虛擬化服務。在這個設定下EL1的宿主Linux (host Linux) 就必須和虛擬機器分時共享EL1硬體，要執行虛擬機器的時候必須：</p>
+<ol>
+<li><p>host Linux EL1跳到EL2</p>
+</li>
+<li><p>EL2保存host Linux EL1的暫存器，執行狀態等等</p>
+</li>
+<li><p>EL2恢復虛擬機器的暫存器，執行狀態等等</p>
+</li>
+<li><p>EL2跳到虛擬機器的EL1開始執行</p>
+</li>
+</ol>
+<p>而如果可以將Linux直接在EL2執行的話，host Linux就不需要和虛擬機器共享EL1硬體資源，步驟會變得更簡單：</p>
+<ol>
+<li><p>Linux在EL2直接恢復EL1虛擬機器的暫存器，執行狀態等等</p>
+</li>
+<li><p>EL2跳到虛擬機器EL1開始執行</p>
+</li>
+</ol>
+<p>在系統頻繁進出VM的場景，例如VM需要接收很多中斷時，第一種效能會差第二種很多。</p>
+<h3 id="VHE"><a href="#VHE" class="headerlink" title="VHE"></a>VHE</h3><p>為了讓Linux能夠跑在EL2，實現上面說的效能提昇，Arm直接延展架構，讓kernel (如Linux) 能夠在只有少量改動的情況下跑在EL2，EL2經過VHE延展後有以下變化：</p>
+<ul>
+<li><p>有兩個translation table base register, TTBR0_EL2 &amp; TTBR1_EL2</p>
+</li>
+<li><p>EL2 translation table entry的格式和bit field定義和EL1 translation table entry一樣</p>
+</li>
+<li><p>EL2也像EL1有virtual timer和physical timer</p>
+</li>
+<li><p>etc..</p>
+</li>
+</ul>
+<p>其實就是把EL2延展成兼容EL1，其中有一點比較特別：</p>
+<ul>
+<li>EL2存取”EL1”暫存器時，會自動改成存取EL2暫存器</li>
+</ul>
+<p>什麼意思呢？舉例來說，VHE的EL2讀取TTBR0_EL1，硬體會自動讀取TTBR0_EL2。咦，那如果真的要讀取TTBR0_EL1怎麼辦呢？那要改成讀TTBR0_EL12。</p>
+<p>這個特性是為了讓已經存在的kernel，如Linux，可以有較小的改動就能在EL2上執行。因為如果想將Linux跑在EL2，原本Linux中的程式在管理系統的時候全部都是用EL1暫存器，那就要全部改寫成存取EL2的版本才行，因為在EL2存取EL1暫存器對Linux本身沒有意義。再來，假設真的都改好了，那在另一個場景，想要把Linux拿回去跑在EL1又怎麼辦，要複製成兩種，一個EL1-Linux，一個EL2-Linux嗎？還是每一次存取都要判斷是EL1還是EL2?</p>
+<p>有了以上的功能，這部份就不用改了，硬體會自動導向，在EL1就存取EL1版本，在EL2就存取EL2版本的暫存器。</p>
+<p>範例：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">/* VHE EL2 */</span><br><span class="line">mrs x0, TTBR0_EL1  # x0讀到TTBR0_EL2    &lt;---- 硬體自動導向！</span><br><span class="line">mrs x0, TTBR0_EL2  # x0也是讀到TTBR0_EL2</span><br><span class="line">mrs x0, TTBR0_EL12 # x0讀到TTBR0_EL1</span><br><span class="line"></span><br><span class="line">/* non-VHE EL2 */</span><br><span class="line">mrs x0, TTBR0_EL1  # x0會讀到TTBR0_EL1</span><br><span class="line">mrs x0, TTBR0_EL2  # x0讀到TTBR0_EL2</span><br><span class="line"></span><br><span class="line">/* EL1 */</span><br><span class="line">mrs x0, TTBR0_EL1  # x0會讀到TTBR0_EL1  &lt;----</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，VHE讓程式不用改就能存取到對應EL的暫存器。</p>
+<h2 id="VHE的開關與偵測"><a href="#VHE的開關與偵測" class="headerlink" title="VHE的開關與偵測"></a>VHE的開關與偵測</h2><p>EL2程式可以透過HCR_EL2.E2H (EL2 Host)這個bit來控制系統是否使用VHE，寫入1開啟，寫入0關閉，不過，在沒有VHE的系統上寫入1當然沒有效果，而另外有些系統則是VHE強制設定開啟，即EL2不能以非VHE模式運作，HCR_EL2.E2H寫入0也沒有效果。</p>
+<p>所以說，有這三種CPU：</p>
+<ol>
+<li><p>沒有VHE功能</p>
+</li>
+<li><p>有VHE功能，而且軟體可以透過HCR_EL2.E2H切換開啟關閉</p>
+</li>
+<li><p>有VHE功能，但是不能關閉</p>
+</li>
+</ol>
+<p>1和(2, 3)的分辨可以用ID_AA64MMFR1_EL1.VH來判定，如果值是1，代表系統有VHE功能(1)，如果值是0，代表沒有VHE功能，只能是2或3。</p>
+<p>那怎麼分辨2或3呢？可以利用ID_AA64MMFR4_EL1.E2H0，這個判定沒有非常直觀，要注意一下，0代表有VHE並且可以關閉VHE，所以是上面的(2)的情況，小於0則是VHE強制開啟。</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ID_AA64MMFR1_EL1.VH &#x3D;&#x3D; 0</th>
+<th>ID_AA64MMFR1_EL1.VH &#x3D;&#x3D; 1</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ID_AA64MMFR4_EL1.E2H0 &#x3D;&#x3D; 0</td>
+<td>沒有VHE功能 (1)</td>
+<td>可以自由開關VHE (2)</td>
+</tr>
+<tr>
+<td>ID_AA64MMFR4_EL1.E2H0 &lt; 0</td>
+<td>違反架構（不應該有這種情況）</td>
+<td>VHE強制開啟 (3)</td>
+</tr>
+</tbody></table>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#%E5%89%8D%E8%A8%80"><span class="top-box-text">前言</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#VHE%E6%98%AF%E5%95%A5"><span class="top-box-text">VHE是啥</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Linux%E8%B7%91%E5%9C%A8EL2%E7%9A%84%E5%A5%BD%E8%99%95"><span class="top-box-text">Linux跑在EL2的好處</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#VHE"><span class="top-box-text">VHE</span></a></li></ol></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#VHE%E7%9A%84%E9%96%8B%E9%97%9C%E8%88%87%E5%81%B5%E6%B8%AC"><span class="top-box-text">VHE的開關與偵測</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/timer_nv_en/">
+          <h3 class="post-title">
+            Next: Why aren’t CNT{P, V} TVAL_EL0 in the VNCR page?
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
