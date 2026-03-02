@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>A bit about ARM VHE</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="A bit about ARM VHE, blog keywords">
+<meta name="description" content="
+Architecture: ARMv8
+
+IntroductionTBH, this post only exists because I don’t want to leave 2025 with just one single pos">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">A bit about ARM VHE</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2026-03-03</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Architecture: ARMv8</p>
+</blockquote>
+<h2 id="Introduction"><a href="#Introduction" class="headerlink" title="Introduction"></a>Introduction</h2><p>TBH, this post only exists because I don’t want to leave 2025 with just one single post, so I just kind of chose something to write about :) I haven’t posted anything until December because there was some changes that aren’t exactly small to my life during this time… Doesn’t matter really, I believe I should have more time for writing posts now. Let’s keep going.</p>
+<p>So I went back looking at the Linux booting code again, and found the VHE related initialization was interesting, but going straight into that feels too quick, so I decided to first give an introduction to VHE, then come back to the booting code for a later article.</p>
+<h2 id="What-is-VHE"><a href="#What-is-VHE" class="headerlink" title="What is VHE?"></a>What is VHE?</h2><p>VHE is short for Virtualization Host Extension, an extension of the Arm architecture. Without VHE, EL2 differs from EL1:</p>
+<ul>
+<li><p>Unlike EL1, which has two translation table base registers TTBR0_EL1 &amp; TTBR1_EL1, EL2 has only one, TTBR0_EL2</p>
+</li>
+<li><p>The format of the translation table entries are different between EL1 and EL2</p>
+</li>
+<li><p>There is only a physical timer for EL2, unlike EL1 with both virtual and physical timers</p>
+</li>
+<li><p>etc..</p>
+</li>
+</ul>
+<p>With that, If we would like to run Linux, which is written to run in EL1, in EL2, in order to make use of EL2’s virtualization features directly, then that would not work, at least not without a huge modification effort.</p>
+<h3 id="Benefits-of-running-in-EL2"><a href="#Benefits-of-running-in-EL2" class="headerlink" title="Benefits of running in EL2"></a>Benefits of running in EL2</h3><p>The motivation for running Linux in EL2 is:</p>
+<p>Linux KVM on Arm originally implements “split-mode” virtualization, where most of the kernel is in EL1, and a small, specially written EL2 part that runs in EL2 to provide virtualization functionalities. This forces EL1 hardware to be shared between the host and guest VMs, to run a guest VM:</p>
+<ol>
+<li><p>host Linux EL1 jumps to EL2</p>
+</li>
+<li><p>EL2 saves the context and registers of host EL1</p>
+</li>
+<li><p>EL2 restores guest VM’s registers and context</p>
+</li>
+<li><p>EL2 jumps back to EL1 to run the guest VM</p>
+</li>
+</ol>
+<p>If we are able to run Linux in EL2, then host Linux wouldn’t need to share EL1 hardware with guest VMs, simplifying the process:</p>
+<ol>
+<li><p>Linux in EL2 restores guest VM’s registers and context</p>
+</li>
+<li><p>EL2 jump back to EL1 to run the guest VM</p>
+</li>
+</ol>
+<p>For workloads that incur frequent VM exits, like interrupt heavy workloads, this can improve performance significantly.</p>
+<h3 id="VHE"><a href="#VHE" class="headerlink" title="VHE"></a>VHE</h3><p>To get Linux running in EL2 and improve performance, Arm extends the architecture to allow kernels written for EL1 to run in EL2 with minimal code modifications, EL2 with VHE introduces changes include:</p>
+<ul>
+<li><p>Two translation table base registers, TTBR0_EL2 &amp; TTBR1_EL2</p>
+</li>
+<li><p>Same translation table entry format as EL1</p>
+</li>
+<li><p>Both virtual timer and physical timer</p>
+</li>
+<li><p>etc..</p>
+</li>
+</ul>
+<p>Basically extending EL2 to make it compatible with EL1, and one special thing:</p>
+<ul>
+<li>when EL2 accesses “EL1” registers, the hardware redirects the accesses to the EL2 version</li>
+</ul>
+<p>What does that mean? For instance, when VHE EL2 reads TTBR0_EL1, the hardware actually returns the value in TTBR0_EL2. You might ask if that is the case, then how does EL2 get the value of the real TTBR0_EL1? Answer to that is it must read TTBR0_EL12 instead.</p>
+<p>This behavior is for minimizing the amount of code required to change in the kernel (Linux) in order to run in EL2. Originally Linux uses EL1 registers to manage the system, they would all need to be modified to access EL2 instead. Even if that is done, what if someone wants to go back to running Linux in EL1? Do we duplicate Linux into EL1-Linux and EL2-Linux? Or we decide at configuration&#x2F;run time?</p>
+<p>With this behavior this problem is resolved, the hardware will automatically redirect the accesses for us depending on the EL.</p>
+<p>Example:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">/* VHE EL2 */</span><br><span class="line">mrs x0, TTBR0_EL1  # x0 gets TTBR0_EL2    &lt;---- automatic redirection by HW！</span><br><span class="line">mrs x0, TTBR0_EL2  # x0 also gets TTBR0_EL2</span><br><span class="line">mrs x0, TTBR0_EL12 # x0 gets TTBR0_EL1</span><br><span class="line"></span><br><span class="line">/* non-VHE EL2 */</span><br><span class="line">mrs x0, TTBR0_EL1  # x0 gets TTBR0_EL1</span><br><span class="line">mrs x0, TTBR0_EL2  # x0 gets TTBR0_EL2</span><br><span class="line"></span><br><span class="line">/* EL1 */</span><br><span class="line">mrs x0, TTBR0_EL1  # x0 gets TTBR0_EL1  &lt;----</span><br></pre></td></tr></table></figure>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Introduction"><span class="top-box-text">Introduction</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#What-is-VHE"><span class="top-box-text">What is VHE?</span></a><ol class="top-box-child"><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#Benefits-of-running-in-EL2"><span class="top-box-text">Benefits of running in EL2</span></a></li><li class="top-box-item top-box-level-3"><a class="top-box-link" href="#VHE"><span class="top-box-text">VHE</span></a></li></ol></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/vhe_background/">
+          <h3 class="post-title">
+            Next: ARM VHE的一些相關知識
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
