@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>PARange, SError, SEA小記錄</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="PARange, SError, SEA小記錄, blog keywords">
+<meta name="description" content="
+處理器架構：ARMv8
+
+最近跟大佬主管聊天聊到標題中的幾個概念，相對以前非常表面的理解，聊完後整體認知又變得更具體了，記錄一下
+PARange以一個抽象的模型思考的話，PARange的意思是CPU能夠向interconnect輸出最多幾">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">PARange, SError, SEA小記錄</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2026-04-11</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>處理器架構：ARMv8</p>
+</blockquote>
+<p>最近跟大佬主管聊天聊到標題中的幾個概念，相對以前非常表面的理解，聊完後整體認知又變得更具體了，記錄一下</p>
+<h2 id="PARange"><a href="#PARange" class="headerlink" title="PARange"></a>PARange</h2><p>以一個抽象的模型思考的話，PARange的意思是CPU能夠向interconnect輸出最多幾個bits的位址。舉例來說如果最多是40個bits，程式硬要存取位址 ≥ (1 &lt;&lt; 40) 的話，CPU內部自己就會發現無法滿足要求，而觸發一個 address size fault。</p>
+<h2 id="SEA"><a href="#SEA" class="headerlink" title="SEA"></a>SEA</h2><p>SEA全稱是synchronous external abort，我學到這可能發生的例子是：在PARange中的位址中，不會所有位址都對應到硬體資源，如記憶體或IO設備。那如果CPU發出請求要存取沒有對應到硬體資源的位址時，就有可能會產生SEA，具體來說是CPU向interconnect發出請求，interconnect回應無法滿足，產生SEA。</p>
+<h2 id="SError"><a href="#SError" class="headerlink" title="SError"></a>SError</h2><p>SError舉的例子是：CPU若decode了很多記憶體位址的存取，在memory attributes允許的條件下，是有可能一次向interconnect發出許多請求的。如果這些請求中有的出現錯誤，有的沒有，那CPU會很尷尬。假設program order第一個請求失敗，第二個成功，那得把第二個請求的結果給undo才能報告一個synchronous的錯誤(SEA)，(接下來是我猜測)但因為這個同時發請求的動作跟branch prediction speculative execution不一樣，沒有辦法rollback，所以只好報告一個non synchronous error (SError interrupt)。要注意的是這類錯誤是產生SEA還是SError都是不一定的，要看具體硬體如何設計。</p>
+<p>SError的缺點是它是asynchronous的，所以在觸發的當下，幾乎沒什麼有用資訊給軟體修正錯誤，例如fault pc，fault address都是無法得知的。</p>
+<h2 id="Synchronous-vs-Precise"><a href="#Synchronous-vs-Precise" class="headerlink" title="Synchronous vs Precise"></a>Synchronous vs Precise</h2><p>這個看Arm ARM就可以了(R_TNVSL)，Synchronous比Precise嚴格，Synchronous一定Precise，Precise不一定Synchornous，主要的差異在於Synchronous一定是因為執行指令，還有exception return address valid，例如page fault, hvc。Precise只要CPU狀態與memory狀態是consistent with CPU執行到exception當下的指令即可，所以包含了IRQ。</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#PARange"><span class="top-box-text">PARange</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#SEA"><span class="top-box-text">SEA</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#SError"><span class="top-box-text">SError</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Synchronous-vs-Precise"><span class="top-box-text">Synchronous vs Precise</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/vhe_background_en/">
+          <h3 class="post-title">
+            Next: A bit about ARM VHE
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
