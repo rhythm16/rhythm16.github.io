@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+
+<script>!function(){var e=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,t=localStorage.getItem("use-color-scheme")||"auto";("dark"===t||e&&"light"!==t)&&document.documentElement.classList.toggle("dark",!0)}()</script>
+
+<meta charset="utf-8" >
+
+<title>Notes on PARange, SError, SEA</title>
+<meta name="google-site-verification" content="CmjL_aZ8fDb2ZxqOct5raymSCyinEt7dd7JeIro6eig" />
+<meta name="keywords" content="Notes on PARange, SError, SEA, blog keywords">
+<meta name="description" content="
+Architecture：ARMv8
+
+I discussed the topics in the title with my boss recently, and learned quite a lot. Previously I on">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="stylesheet" href="/style/main.css">
+
+
+<link rel="stylesheet" href="/style/jquery.fancybox.min.css">
+
+
+
+
+    <link rel="stylesheet" href="/style/prism.css"/>
+
+
+
+
+
+  <meta name="generator" content="Hexo 7.1.1"></head>
+  <body>
+    <div id="app" class="main">
+
+<div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://rhythm16.github.io">
+        <img class="avatar" src="/images/avatar.png" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://rhythm16.github.io">
+        <h1 class="site-title">rhythm16.github.io</h1>
+      </a>
+    </div>
+    <div class="right">
+        <i class="icon menu-switch icon-menu-outline" ></i>
+    </div>
+  </div>
+</div>
+
+<div class="menu-container" style="height: 0;opacity: 0;">
+<nav class="menu-list">
+  
+    
+      <a href="/" class="menu purple-link">
+        Home
+      </a>
+    
+  
+    
+      <a href="/tags" class="menu purple-link">
+        Tags
+      </a>
+    
+  
+    
+      <a href="/categories" class="menu purple-link">
+        Categories
+      </a>
+    
+  
+    
+      <a href="/archives" class="menu purple-link">
+        Archives
+      </a>
+    
+  
+    
+      <a href="/about" class="menu purple-link">
+        About
+      </a>
+    
+  
+</nav>
+</div>
+
+
+
+  <div class="content-container">
+    <div class="post-detail">
+      
+      <h2 class="post-title">Notes on PARange, SError, SEA</h2>
+      <div class="post-info post-detail-info">
+        <span><i class="icon icon-calendar-outline"></i> 2026-04-27</span>
+        
+          <span>
+          <i class="icon icon-pricetags-outline"></i>
+            
+              <a href="/tags/ARMv8/">
+              ARMv8
+                
+              </a>
+            
+          </span>
+        
+      </div>
+      <div class="post-content-wrapper">
+        <div class="post-content">
+          <blockquote>
+<p>Architecture：ARMv8</p>
+</blockquote>
+<p>I discussed the topics in the title with my boss recently, and learned quite a lot. Previously I only understood these ideas in an abstract way.</p>
+<h2 id="PARange"><a href="#PARange" class="headerlink" title="PARange"></a>PARange</h2><p>Abstractly, PARange stands for the number of bits the CPU is able to send to the interconnect as addresses. For example if the maximum is 40 bits, and software accesses an address ≥ (1 &lt;&lt; 40) the CPU will detect it can’t satisfy the access and trigger an address size fault.</p>
+<h2 id="SEA"><a href="#SEA" class="headerlink" title="SEA"></a>SEA</h2><p>SEA stands for synchronous external abort, what I learned was: In the entire PARange, not every part of it will map to hardware, like RAM or IO devices. Then if the CPU tries to access an address without hardware, an SEA could happen. Concretely, the interconnect will see this when receiving the request, and replies the request is unsatisfiable, which incurs an SEA.</p>
+<h2 id="SError"><a href="#SError" class="headerlink" title="SError"></a>SError</h2><p>The example for SError is: If the CPU decodes a bunch of memory accesses, and if memory attributes allows it, the CPU can send multiple requests to the interconnect in parallel. And if some of these requests succeed and some fail, the situation becomes awkward for the CPU. Say the first request fails, but the second succeeds, the second result must be undone in order to report a synchronous error (SEA), (the following is just my guess) but since this parallel sending of requests is different from branch prediction speculative execution, it can’t be rollbacked, so the only way to report the error is via a non synchronous error (SError interrupt). Note that whether an SEA or SError is triggered for this kind of situation is hardware implementation defined.</p>
+<p>The downside of SError is that it is asynchronous, therefore there is little information left to software to fix the problem at the fault. For instance the fault pc and the fault address are both not available.</p>
+<h2 id="Synchronous-vs-Precise"><a href="#Synchronous-vs-Precise" class="headerlink" title="Synchronous vs Precise"></a>Synchronous vs Precise</h2><p>This is clearly stated in the Arm ARM (R_TNVSL). Synchronous is stricter than precise, meaning synchornous is precise, precise may not be synchronous. The main difference is that synchronous must be caused by an attempt to execute an instruction, and the exception return address is valid, like page fault or hvc. Precise only requires the CPU and memory state is consistent with the CPU’s execution up to the point of the exception, therefore it includes IRQ.</p>
+
+        </div>
+        <div class="top-div">
+          <ol class="top-box"><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#PARange"><span class="top-box-text">PARange</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#SEA"><span class="top-box-text">SEA</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#SError"><span class="top-box-text">SError</span></a></li><li class="top-box-item top-box-level-2"><a class="top-box-link" href="#Synchronous-vs-Precise"><span class="top-box-text">Synchronous vs Precise</span></a></li></ol>
+        </div>
+      </div>
+    </div>
+
+    
+      <div class="next-post">
+        <a class="purple-link" href="/PARange_SError_SEA/">
+          <h3 class="post-title">
+            Next: PARange, SError, SEA小記錄
+          </h3>
+        </a>
+      </div>
+    
+  </div>
+
+
+
+
+<footer>
+<div class="site-footer">
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  
+    Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> <a href="https://github.com/f-dong/hexo-theme-minimalism" target="_blank">Theme</a>
+  
+  
+  
+  
+  
+  
+</div>
+</footer>
+
+
+      </div>
+      
+    <script src="/js/jquery.min.js"></script>
+    <script src="/js/jquery.fancybox.min.js"></script>
+
+
+
+    <script>window.is_post = true;</script>
+
+
+<script src="/js/main.js"></script>
+
+
+
+
+
+    </div>
+  </body>
+</html>
+
